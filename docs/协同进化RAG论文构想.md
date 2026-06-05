@@ -441,16 +441,16 @@ generator 根据 top1_doc 生成答案
 5. 新增 replay buffer，保存每轮合约、答案、审计和奖励。
 6. reranker 增加 action head，预测 `answer_now / retrieve_more / rewrite_query / ask_auditor`。
 
-## 13. 面向 CCF-A 的待完成创新点 TODO
+## 13. 面向 CCF-A 的创新点 TODO 与状态
 
 当前方案已经具备“证据合约 + 大模型审计 + 分解奖励 + 双 LoRA 闭环”的原型，但若目标是 CCF-A 级别投稿，还需要把创新从工程流程进一步强化为可验证的学习机制。下面的 TODO 使用统一编号 `ECR-*`，与代码开发文档中的同名 TODO 严格对应。
 
-| 编号 | 待完成创新点 | 论文中要证明的问题 | 当前状态 | 需要补强的证据 | 对应代码 TODO |
+| 编号 | 创新点 | 论文中要证明的问题 | 当前状态 | 后续补强证据 | 对应代码模块 |
 |---|---|---|---|---|---|
-| ECR-1 | 可训练的小模型证据-动作-置信度策略 | 小模型是否真的从 reranker 升级为低成本 RAG policy model | 当前主要是 reranker 打分 + 启发式合约 | evidence/action/calibration head 的训练损失、消融和校准曲线 | `small_model.py`、`small_trainer.py`、`schemas.py`、`config.py` |
-| ECR-2 | 责任归因式 credit assignment | 答案正确时如何避免错误奖励检索器，答案错误时如何识别生成失败 | 当前已有四象限 reward 和 rule verifier | 与 answer-only reward 的对照、错误奖励率下降、failure_type 分布 | `rewards.py`、`verifier.py`、`replay_buffer.py` |
-| ECR-3 | 可靠审计与抗噪声自训练 | 大模型审计是否足够可靠，错误审计是否会污染小模型 | 当前已有 JSON 解析、规则验证、多候选审计打分 | 审计一致性、人工抽样一致率、trust-weight 过滤消融 | `large_model.py`、`auditor.py`、`verifier.py`、`replay_buffer.py` |
-| ECR-4 | 成本感知动态检索动作 | 系统是否能在 accuracy 与调用成本之间自适应权衡 | 当前 action 多为启发式，训练目标尚未完全落地 | 固定 top-k vs 动态 action、accuracy-cost Pareto frontier | `contract.py`、`small_model.py`、`small_trainer.py`、`evaluation/metrics.py` |
+| ECR-1 | 可训练的小模型证据-动作-置信度策略 | 小模型是否真的从 reranker 升级为低成本 RAG policy model | **代码完成，待实验成表**：已加入 `SmallPolicyHeads`、policy 专用配置、head 保存/加载元数据、多任务 loss 和训练指标输出，默认主配置仍关闭 | 在 H20 上运行 `configs/debug_policy.yaml` / `configs/evoco_popqa_policy.yaml`，报告 evidence/action/calibration loss、action accuracy、ECE、Recall/MRR 消融 | `small_model.py`、`small_trainer.py`、`schemas.py`、`config.py` |
+| ECR-2 | 责任归因式 credit assignment | 答案正确时如何避免错误奖励检索器，答案错误时如何识别生成失败 | **代码完成，待实验成表**：已加入 `attribution_case`、credit weight、answer-only 误奖励统计和 replay/metrics 输出 | 用真实审计结果跑 answer-only vs decomposed reward 消融，报告错误奖励率下降和四象限分布 | `rewards.py`、`verifier.py`、`replay_buffer.py`、`evaluation/metrics.py` |
+| ECR-3 | 可靠审计与抗噪声自训练 | 大模型审计是否足够可靠，错误审计是否会污染小模型 | **代码完成，待人工验证**：已加入多候选审计摘要、`self_consistency`、`trust_components` 和 trust summary | 抽样人工复查审计一致率，报告 trust-weight 过滤消融和低信任样本比例 | `large_model.py`、`auditor.py`、`verifier.py`、`replay_buffer.py` |
+| ECR-4 | 成本感知动态检索动作 | 系统是否能在 accuracy 与调用成本之间自适应权衡 | **待做**：当前 action 仍主要是启发式，policy head 只提供基础接口 | 固定 top-k vs 动态 action、accuracy-cost Pareto frontier | `contract.py`、`small_model.py`、`small_trainer.py`、`evaluation/metrics.py` |
 | ECR-5 | 多粒度证据合约 | 证据合约是否能从文档级扩展到句子级、span 级和多跳证据组合 | 当前主要是文档级 + 句子启发式 span | sentence/span citation correctness、多跳证据覆盖率 | `contract.py`、`schemas.py`、`text_utils.py`、`verifier.py` |
 | ECR-6 | 大模型忠实生成与审计格式协同优化 | 大模型是否不仅答对，还能稳定引用证据并输出可靠审计 | 当前已有 SFT 入口和结构化输出约束 | SFT/GRPO/DPO 对 JSON parse rate、unsupported answer rate 的贡献 | `large_trainer.py`、`large_model.py`、`auditor.py` |
 | ECR-7 | 多轮协同进化稳定性 | 大小模型多轮互相学习是否带来持续收益，而不是单轮伪标签噪声 | 当前支持 round 级训练和 checkpoint | round-by-round 曲线、漂移检测、early stop、replay 质量变化 | `coevolution_trainer.py`、`replay_buffer.py`、`evaluation/evaluator.py` |

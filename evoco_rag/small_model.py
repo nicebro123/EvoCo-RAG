@@ -11,7 +11,9 @@ evidence/action/confidence heads，训练逻辑在 small_trainer.py。
 
 from __future__ import annotations
 
+import json
 import os
+import warnings
 from typing import Optional
 
 from .contract import build_contract
@@ -25,6 +27,8 @@ ACTION_LABELS = [
     RetrievalAction.REWRITE_QUERY,
     RetrievalAction.ASK_AUDITOR,
 ]
+POLICY_HEADS_FILE = "small_policy_heads.pt"
+POLICY_HEADS_CONFIG = "small_policy_heads_config.json"
 
 
 class SmallPolicyHeads:
@@ -71,6 +75,7 @@ class SmallRagPolicy:
         self.action_labels = ACTION_LABELS
         self.action_label_to_id = {label: i for i, label in enumerate(self.action_labels)}
         self.last_policy_prediction: dict = {}
+        self.policy_heads_loaded = False
         self.tokenizer = AutoTokenizer.from_pretrained(base_path)
         model = AutoModelForSequenceClassification.from_pretrained(base_path).to(self.device)
 
@@ -92,13 +97,30 @@ class SmallRagPolicy:
         self.model = model
         self.policy_heads = None
         if use_policy_heads:
-            hidden_size = getattr(model.config, "hidden_size", None)
+            hidden_size = self._infer_hidden_size(model)
             if hidden_size is None:
                 raise ValueError("model.config.hidden_size is required for SmallPolicyHeads")
             self.policy_heads = SmallPolicyHeads(hidden_size, len(self.action_labels)).to(self.device)
-            heads_path = os.path.join(lora_dir or "", "small_policy_heads.pt") if lora_dir else ""
+            heads_path = os.path.join(lora_dir or "", POLICY_HEADS_FILE) if lora_dir else ""
             if heads_path and os.path.exists(heads_path):
                 self.policy_heads.load_state_dict(torch.load(heads_path, map_location=self.device))
+                self.policy_heads_loaded = True
+            elif lora_dir:
+                warnings.warn(
+                    f"use_policy_heads=True but {POLICY_HEADS_FILE} was not found in {lora_dir}; "
+                    "initializing fresh policy heads.",
+                    RuntimeWarning,
+                )
+
+    @staticmethod
+    def _infer_hidden_size(model) -> Optional[int]:
+        config = getattr(model, "config", None)
+        hidden_size = getattr(config, "hidden_size", None)
+        if hidden_size is not None:
+            return hidden_size
+        base = getattr(model, "base_model", None)
+        base_config = getattr(base, "config", None)
+        return getattr(base_config, "hidden_size", None)
 
     def rank_documents(self, sample: RagSample, top_k: Optional[int] = None) -> list[dict]:
         """对样本所有文档打分，返回按分数降序的 [{doc_id, score}]。"""
@@ -169,6 +191,7 @@ class SmallRagPolicy:
         if self.last_policy_prediction:
             contract.uncertainty["policy_predicted_action"] = self.last_policy_prediction["action"]
             contract.uncertainty["policy_action_logits"] = self.last_policy_prediction["action_logits"]
+            contract.uncertainty["policy_heads_loaded"] = self.policy_heads_loaded
         return contract
 
     def predict_evidence_confidence(self, sample: RagSample, doc: dict) -> float:
@@ -194,4 +217,11 @@ class SmallRagPolicy:
         if self.policy_heads is not None:
             import torch
             os.makedirs(out_dir, exist_ok=True)
-            torch.save(self.policy_heads.state_dict(), os.path.join(out_dir, "small_policy_heads.pt"))
+            torch.save(self.policy_heads.state_dict(), os.path.join(out_dir, POLICY_HEADS_FILE))
+            meta = {
+                "action_labels": self.action_labels,
+                "use_policy_heads": True,
+                "policy_heads_file": POLICY_HEADS_FILE,
+            }
+            with open(os.path.join(out_dir, POLICY_HEADS_CONFIG), "w", encoding="utf-8") as f:
+                json.dump(meta, f, ensure_ascii=False, indent=2)

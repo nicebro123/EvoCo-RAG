@@ -1,13 +1,32 @@
 """小模型 LoRA 训练（开发文档 §5.10、§9.3）。
 
 用 replay buffer 里经审计的 positive / negative doc 训练 reranker，沿用 margin
-ranking loss。第一版只做文档级 ranking；evidence/action/calibration 多任务 loss
-留待后续阶段扩展。torch 延迟导入。
+ranking loss。开启 small policy heads 后，同时训练 evidence/action/calibration
+多任务 loss，并返回 action/evidence/calibration 指标。torch 延迟导入。
 """
 
 from __future__ import annotations
 
 from typing import Optional
+
+
+def _binary_ece(probs: list[float], labels: list[float], n_bins: int = 10) -> Optional[float]:
+    if not probs:
+        return None
+    total = len(probs)
+    ece = 0.0
+    for i in range(n_bins):
+        lo, hi = i / n_bins, (i + 1) / n_bins
+        idxs = [
+            j for j, p in enumerate(probs)
+            if (lo <= p <= hi if i == 0 else lo < p <= hi)
+        ]
+        if not idxs:
+            continue
+        conf = sum(probs[j] for j in idxs) / len(idxs)
+        acc = sum(labels[j] for j in idxs) / len(idxs)
+        ece += (len(idxs) / total) * abs(acc - conf)
+    return float(ece)
 
 
 class SmallTrainer:
@@ -59,6 +78,10 @@ class SmallTrainer:
             policy_heads.train()
         total_loss, steps = 0.0, 0
         rank_loss_total, evidence_loss_total, action_loss_total, calibration_loss_total = 0.0, 0.0, 0.0, 0.0
+        evidence_correct, evidence_total = 0, 0
+        action_correct, action_total = 0, 0
+        calibration_probs: list[float] = []
+        calibration_labels: list[float] = []
         for _ in range(epochs):
             for start in range(0, len(usable), self.batch_size):
                 batch = usable[start:start + self.batch_size]
@@ -113,10 +136,19 @@ class SmallTrainer:
                         evidence_loss = F.binary_cross_entropy_with_logits(
                             head_out["evidence_logits"].view(-1), target)
                         loss = loss + self.evidence_loss_weight * evidence_loss
+                    with torch.no_grad():
+                        evidence_probs = torch.sigmoid(head_out["evidence_logits"].view(-1))
+                        evidence_preds = (evidence_probs >= 0.5).float()
+                        evidence_correct += int((evidence_preds == target).sum().item())
+                        evidence_total += int(target.numel())
                     if self.calibration_loss_weight:
                         calibration_loss = F.binary_cross_entropy_with_logits(
                             head_out["confidence_logits"].view(-1), target)
                         loss = loss + self.calibration_loss_weight * calibration_loss
+                    with torch.no_grad():
+                        conf_probs = torch.sigmoid(head_out["confidence_logits"].view(-1))
+                        calibration_probs.extend(float(x) for x in conf_probs.detach().cpu().tolist())
+                        calibration_labels.extend(float(x) for x in target.detach().cpu().tolist())
                     if self.action_loss_weight:
                         action_rows, action_labels = [], []
                         label_map = getattr(self.policy, "action_label_to_id", {})
@@ -132,6 +164,10 @@ class SmallTrainer:
                             labels = torch.tensor(action_labels, dtype=torch.long, device=device)
                             action_loss = F.cross_entropy(action_logits, labels)
                             loss = loss + self.action_loss_weight * action_loss
+                            with torch.no_grad():
+                                preds = torch.argmax(action_logits, dim=-1)
+                                action_correct += int((preds == labels).sum().item())
+                                action_total += int(labels.numel())
 
                 optimizer.zero_grad()
                 loss.backward()
@@ -143,15 +179,21 @@ class SmallTrainer:
                 calibration_loss_total += float(calibration_loss.item())
                 steps += 1
 
-        return {
+        policy_enabled = policy_heads is not None
+        result = {
             "trained_samples": len(usable),
             "skipped": len(pairs) - len(usable),
             "avg_loss": (total_loss / steps) if steps else None,
             "avg_rank_loss": (rank_loss_total / steps) if steps else None,
-            "avg_evidence_loss": (evidence_loss_total / steps) if steps else None,
-            "avg_action_loss": (action_loss_total / steps) if steps else None,
-            "avg_calibration_loss": (calibration_loss_total / steps) if steps else None,
+            "policy_heads_enabled": policy_enabled,
+            "avg_evidence_loss": (evidence_loss_total / steps) if (steps and policy_enabled) else None,
+            "avg_action_loss": (action_loss_total / steps) if (steps and policy_enabled) else None,
+            "avg_calibration_loss": (calibration_loss_total / steps) if (steps and policy_enabled) else None,
+            "evidence_accuracy": (evidence_correct / evidence_total) if evidence_total else None,
+            "action_accuracy": (action_correct / action_total) if action_total else None,
+            "calibration_ece": _binary_ece(calibration_probs, calibration_labels),
         }
+        return result
 
     def save(self, out_dir: str) -> None:
         self.policy.save_lora(out_dir)
