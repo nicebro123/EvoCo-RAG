@@ -1,7 +1,7 @@
 """测试集评估入口（开发文档 §7、§9.4）。
 
 gold answers 不进入大模型 prompt，只用于离线指标。需要 GPU + 模型权重。
-    CUDA_VISIBLE_DEVICES=0,1,2,3 python scripts/eval_evoco.py --config configs/evoco_popqa.yaml \
+    CUDA_VISIBLE_DEVICES=2,3 python scripts/eval_evoco.py --config configs/evoco_popqa.yaml \
         --small_lora ../rag_assets/checkpoints/evoco_popqa/small/round_002 \
         --large_lora ../rag_assets/checkpoints/evoco_popqa/large/round_002
 """
@@ -41,7 +41,12 @@ def main():
                                   lora_dir=small_lora, use_lora=False)
     large_auditor = LargeGeneratorAuditor(base_path=cfg.models.large_base_path,
                                           lora_dir=large_lora, use_lora=False,
-                                          use_4bit=cfg.models.use_4bit)
+                                          use_4bit=cfg.models.use_4bit,
+                                          max_prompt_length=cfg.runtime.max_prompt_length,
+                                          max_completion_length=cfg.runtime.max_completion_length,
+                                          candidate_doc_char_limit=cfg.runtime.candidate_doc_char_limit,
+                                          num_audit_candidates=cfg.runtime.num_audit_candidates,
+                                          audit_temperature=cfg.runtime.audit_temperature)
     evaluator = Evaluator(cfg, small_policy, large_auditor)
     metrics = evaluator.run_inference(samples)
     print(json.dumps(metrics, ensure_ascii=False, indent=2))

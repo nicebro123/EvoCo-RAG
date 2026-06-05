@@ -1,4 +1,7 @@
-from evoco_rag.auditor import extract_json_block, parse_audit
+from conftest import make_audit, make_contract, make_sample
+
+from evoco_rag.auditor import build_audit_prompt, extract_json_block, parse_audit
+from evoco_rag.large_model import LargeGeneratorAuditor
 
 
 def test_extract_clean_json():
@@ -44,3 +47,34 @@ def test_parse_audit_fallback_on_garbage():
     audit, ok = parse_audit("no json here at all", "s1", 1)
     assert ok is False
     assert audit.sample_id == "s1"
+
+
+def test_build_audit_prompt_uses_configurable_doc_limit():
+    sample = make_sample()
+    sample.documents[0]["text"] = "x" * 50
+    contract = make_contract([0])
+
+    messages = build_audit_prompt(sample, contract, candidate_doc_char_limit=12)
+    text = messages[-1]["content"]
+
+    assert "x" * 12 in text
+    assert "x" * 13 not in text
+    assert "..." in text
+
+
+def test_audit_candidate_score_prefers_supported_cited_answer():
+    sample = make_sample()
+    contract = make_contract([0])
+    good = make_audit("politician", [0])
+    good.used_evidence = [{"doc_id": 0, "quote": "Conservative Party politician"}]
+    bad = make_audit(
+        "British Army officer and naturalist",
+        [],
+        support_level="unsupported",
+        failure_type="unsupported_answer",
+    )
+
+    good_score = LargeGeneratorAuditor.score_audit_candidate(sample, contract, good, True)
+    bad_score = LargeGeneratorAuditor.score_audit_candidate(sample, contract, bad, True)
+
+    assert good_score > bad_score

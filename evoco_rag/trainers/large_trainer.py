@@ -17,7 +17,7 @@ from ..auditor import build_audit_prompt
 
 
 class LargeTrainer:
-    def __init__(self, auditor, lr: float = 1e-5, max_prompt_length: int = 2048,
+    def __init__(self, auditor, lr: float = 1e-5, max_prompt_length: int = 3072,
                  max_completion_length: int = 1024):
         self.auditor = auditor
         self.lr = lr

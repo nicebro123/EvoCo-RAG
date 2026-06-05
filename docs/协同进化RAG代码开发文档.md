@@ -808,10 +808,10 @@ models:
   large_lora_dir: ../rag_assets/checkpoints/evoco_popqa/large
 
 contract:
-  top_k: 3
+  top_k: 5
   high_conf_threshold: 0.75
   answer_now_margin: 0.15
-  max_selected_docs: 3
+  max_selected_docs: 5
 
 training:
   num_rounds: 3
@@ -831,11 +831,11 @@ reward:
   retrieval_round_cost: 0.1
 
 runtime:
-  fp16: true
-  load_in_4bit: true
-  max_prompt_length: 2048
+  candidate_doc_char_limit: 1200
+  num_audit_candidates: 3
+  audit_temperature: 0.7
+  max_prompt_length: 3072
   max_completion_length: 1024
-  json_retry: 3
 ```
 
 ## 9. 大小模型权重与 checkpoint 布局
@@ -1216,4 +1216,4 @@ Audited reranker training
 
 - 本机 CPU 已验证：schema 校验、四象限归因、verifier、replay、JSON 解析、权重路径解析、指标、seed replay 实跑、完整 no-model 消融跑批。
 - 待 H20 验证：reranker/LLM 加载、bf16 训练、真实审计 JSON 成功率、双 LoRA 多轮协同进化收敛。
-  入口：`CUDA_VISIBLE_DEVICES=0,1,2,3 python scripts/train_evoco.py --config configs/debug.yaml`（先 16 条），通过后切 `configs/evoco_popqa.yaml`。
+  入口：`CUDA_VISIBLE_DEVICES=2,3 python scripts/train_evoco.py --config configs/debug.yaml`（先 16 条），通过后切 `configs/evoco_popqa.yaml`。

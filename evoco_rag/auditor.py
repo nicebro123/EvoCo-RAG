@@ -23,7 +23,7 @@ from .schemas import (
 AUDIT_JSON_SCHEMA_HINT = """You MUST output ONLY a single JSON object, no Markdown, no extra text.
 JSON schema:
 {
-  "final_answer": "<concise answer string>",
+  "final_answer": "<short entity-style answer string; no explanation>",
   "used_doc_ids": [<int doc_id>, ...],
   "used_evidence": [{"doc_id": <int>, "quote": "<verbatim span>"}],
   "answer_correctness": "correct|incorrect|unknown",
@@ -44,7 +44,12 @@ FAILURE_TYPE_DEFS = """failure_type definitions:
 - over_retrieval: too many irrelevant docs were selected."""
 
 
-def build_audit_prompt(sample, contract, show_gold: bool = False) -> list[dict]:
+def build_audit_prompt(
+    sample,
+    contract,
+    show_gold: bool = False,
+    candidate_doc_char_limit: int = 1200,
+) -> list[dict]:
     """构造 (system, user) chat messages。
 
     show_gold=True 仅用于训练阶段的 teacher audit；评估阶段必须为 False，
@@ -54,10 +59,13 @@ def build_audit_prompt(sample, contract, show_gold: bool = False) -> list[dict]:
         "You are an evidence auditor for a retrieval-augmented QA system. "
         "Given a question, a small model's selected evidence and candidate documents, "
         "you must (1) answer the question, (2) cite which documents you used, and "
-        "(3) audit whether the evidence truly supports your answer.\n\n"
+        "(3) audit whether the evidence truly supports your answer. "
+        "For factoid QA, final_answer must be the shortest correct entity or phrase, "
+        "not a full sentence and not an explanation.\n\n"
         + AUDIT_JSON_SCHEMA_HINT + "\n\n" + FAILURE_TYPE_DEFS
     )
 
+    limit = max(1, int(candidate_doc_char_limit or 1200))
     lines = [f"Question: {sample.question}", "", "Small model selected evidence:"]
     for ev in contract.selected_evidence:
         lines.append(f"  - doc_id={ev.doc_id} (conf={ev.relevance_confidence}): {ev.span}")
@@ -66,7 +74,9 @@ def build_audit_prompt(sample, contract, show_gold: bool = False) -> list[dict]:
     for cand in contract.candidate_docs:
         doc = sample.doc_by_id(cand.get("doc_id")) or {}
         text = doc.get("text") or doc.get("raw") or ""
-        lines.append(f"  [doc_id={cand.get('doc_id')}] {doc.get('title', '')}: {text[:400]}")
+        truncated = text[:limit]
+        suffix = " ..." if len(text) > limit else ""
+        lines.append(f"  [doc_id={cand.get('doc_id')}] {doc.get('title', '')}: {truncated}{suffix}")
     if show_gold:
         lines.append("")
         lines.append(f"(Training-only) Gold answers: {sample.answers}")

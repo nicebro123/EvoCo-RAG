@@ -14,13 +14,20 @@ models:
   large_base_path: ../rag_assets/base_models/generator/Mistral-Nemo-Instruct-2407
   small_lora_dir: ../rag_assets/checkpoints/evoco_popqa/small
   large_lora_dir: ../rag_assets/checkpoints/evoco_popqa/large
-  use_4bit: false          # 默认 bf16；推荐用 CUDA_VISIBLE_DEVICES=0,1,2,3 暴露 4 张卡
+  use_4bit: false          # 默认 bf16；推荐用 CUDA_VISIBLE_DEVICES=2,3 暴露 2 张 H20
 
 contract:
-  top_k: 3
+  top_k: 5
   high_conf_threshold: 0.75
   answer_now_margin: 0.15
-  max_selected_docs: 3
+  max_selected_docs: 5
+
+runtime:
+  candidate_doc_char_limit: 1200
+  num_audit_candidates: 3
+  audit_temperature: 0.7
+  max_prompt_length: 3072
+  max_completion_length: 1024
 
 training:
   num_rounds: 3

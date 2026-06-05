@@ -119,6 +119,7 @@ def write_weight_manifest(config, output_dir: Optional[str] = None) -> str:
         },
         "weights": layout,
         "models_config": asdict(config.models),
+        "runtime_config": asdict(config.runtime),
     }
     path = os.path.join(out_dir, "weights_manifest.json")
     with open(path, "w", encoding="utf-8") as f:

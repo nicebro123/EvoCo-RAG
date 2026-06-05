@@ -67,3 +67,4 @@ def test_prepare_layout_and_manifest(tmp_path):
         manifest = json.load(f)
     assert manifest["weights"]["small_checkpoint_root"] == cfg.models.small_lora_dir
     assert manifest["weights"]["large_checkpoint_root"] == cfg.models.large_lora_dir
+    assert manifest["runtime_config"]["candidate_doc_char_limit"] == 1200

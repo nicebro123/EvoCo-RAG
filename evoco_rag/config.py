@@ -15,10 +15,10 @@ from .rewards import RewardWeights
 
 @dataclass
 class ContractConfig:
-    top_k: int = 3
+    top_k: int = 5
     high_conf_threshold: float = 0.75
     answer_now_margin: float = 0.15
-    max_selected_docs: int = 3
+    max_selected_docs: int = 5
 
 
 @dataclass
@@ -30,6 +30,15 @@ class TrainingConfig:
     large_lr: float = 1.0e-5
     train_small_lora: bool = True
     train_large_lora: bool = True
+
+
+@dataclass
+class RuntimeConfig:
+    candidate_doc_char_limit: int = 1200
+    num_audit_candidates: int = 3
+    audit_temperature: float = 0.7
+    max_prompt_length: int = 3072
+    max_completion_length: int = 1024
 
 
 @dataclass
@@ -67,6 +76,7 @@ class EvoCoConfig:
     models: ModelsConfig = field(default_factory=ModelsConfig)
     contract: ContractConfig = field(default_factory=ContractConfig)
     training: TrainingConfig = field(default_factory=TrainingConfig)
+    runtime: RuntimeConfig = field(default_factory=RuntimeConfig)
     reward: RewardWeights = field(default_factory=RewardWeights)
     ablation: AblationConfig = field(default_factory=AblationConfig)
 
@@ -86,6 +96,8 @@ class EvoCoConfig:
                                        if k in ContractConfig.__dataclass_fields__}),
             training=TrainingConfig(**{k: v for k, v in d.get("training", {}).items()
                                        if k in TrainingConfig.__dataclass_fields__}),
+            runtime=RuntimeConfig(**{k: v for k, v in d.get("runtime", {}).items()
+                                     if k in RuntimeConfig.__dataclass_fields__}),
             reward=RewardWeights(**{k: v for k, v in reward_raw.items()
                                     if k in RewardWeights.__dataclass_fields__}),
             ablation=AblationConfig(**{k: v for k, v in d.get("ablation", {}).items()

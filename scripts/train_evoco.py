@@ -2,7 +2,7 @@
 
 只负责 CLI 与 trainer 调用，训练逻辑都在 CoevolutionTrainer。需要 GPU + 模型权重，
 在 H20 机器上运行：
-    CUDA_VISIBLE_DEVICES=0,1,2,3 python scripts/train_evoco.py --config configs/evoco_popqa.yaml
+    CUDA_VISIBLE_DEVICES=2,3 python scripts/train_evoco.py --config configs/evoco_popqa.yaml
 """
 
 import argparse
@@ -76,11 +76,20 @@ def main():
     large_auditor = LargeGeneratorAuditor(
         base_path=cfg.models.large_base_path,
         lora_dir=large_init,
-        use_lora=True, use_4bit=cfg.models.use_4bit)
+        use_lora=True, use_4bit=cfg.models.use_4bit,
+        max_prompt_length=cfg.runtime.max_prompt_length,
+        max_completion_length=cfg.runtime.max_completion_length,
+        candidate_doc_char_limit=cfg.runtime.candidate_doc_char_limit,
+        num_audit_candidates=cfg.runtime.num_audit_candidates,
+        audit_temperature=cfg.runtime.audit_temperature)
 
     small_trainer = SmallTrainer(small_policy, lr=cfg.training.small_lr,
                                  batch_size=cfg.training.batch_size)
-    large_trainer = LargeTrainer(large_auditor, lr=cfg.training.large_lr)
+    large_trainer = LargeTrainer(
+        large_auditor,
+        lr=cfg.training.large_lr,
+        max_prompt_length=cfg.runtime.max_prompt_length,
+        max_completion_length=cfg.runtime.max_completion_length)
     evaluator = Evaluator(cfg, small_policy, large_auditor)
 
     trainer = CoevolutionTrainer(cfg, small_policy, large_auditor,

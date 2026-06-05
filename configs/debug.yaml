@@ -17,10 +17,17 @@ models:
   use_4bit: false
 
 contract:
-  top_k: 3
+  top_k: 5
   high_conf_threshold: 0.75
   answer_now_margin: 0.15
-  max_selected_docs: 3
+  max_selected_docs: 5
+
+runtime:
+  candidate_doc_char_limit: 1200
+  num_audit_candidates: 2
+  audit_temperature: 0.7
+  max_prompt_length: 3072
+  max_completion_length: 1024
 
 training:
   num_rounds: 1
