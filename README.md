@@ -132,9 +132,10 @@ test -d ../rag_assets/base_models/reranker/bge-reranker-v2-m3
 test -d ../rag_assets/base_models/generator/Meta-Llama-3.1-8B-Instruct
 ```
 
-## 4. Install Environment
+## 4. Install GPU Environment
 
-For GPU training, install PyTorch according to your CUDA environment first:
+This project is intended to train with GPU. Install PyTorch according to your
+CUDA environment first:
 
 ```bash
 # Example only. Use the command from https://pytorch.org/get-started/locally/
@@ -144,7 +145,7 @@ pip install torch --index-url https://download.pytorch.org/whl/cu121
 Then install the project dependencies:
 
 ```bash
-pip install -U transformers peft trl datasets sentence-transformers accelerate pyyaml numpy pytest
+pip install -r requirements-gpu.txt
 ```
 
 If using 4-bit loading, also install:
@@ -153,7 +154,8 @@ If using 4-bit loading, also install:
 pip install -U bitsandbytes
 ```
 
-For CPU-only code checks:
+`requirements-cpu.txt` is only for CPU-only code checks. It is not sufficient
+for training or evaluation with real models.
 
 ```bash
 pip install -r requirements-cpu.txt

@@ -1,0 +1,12 @@
+accelerate
+datasets
+numpy
+peft
+pyyaml
+pytest
+sentence-transformers
+transformers
+trl
+
+# Optional. Install when configs/*.yaml sets models.use_4bit=true.
+# bitsandbytes
