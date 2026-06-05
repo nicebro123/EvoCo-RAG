@@ -11,7 +11,7 @@ sibling `rag_assets/` directory.
 The expected workflow is:
 
 ```text
-1. Clone this private repository
+1. Clone this repository
 2. Download the preprocessed PopQA data release
 3. Download the reranker and generator base weights from Hugging Face
 4. Install GPU dependencies
@@ -22,10 +22,7 @@ The expected workflow is:
 
 ## 1. Clone
 
-This repository is private. Make sure your GitHub account has access.
-
 ```bash
-gh auth login
 git clone https://github.com/nicebro123/EvoCo-RAG.git
 cd EvoCo-RAG
 ```
@@ -58,7 +55,7 @@ The code expects the project-preprocessed PopQA data, not raw PopQA. The
 training file already contains retrieved contexts and document-level seed labels;
 the test file contains retrieved contexts under `ctxs`.
 
-Download the private release asset:
+Download the release asset with GitHub CLI:
 
 ```bash
 mkdir -p ../rag_assets
@@ -66,6 +63,16 @@ gh release download data-v0 \
   --repo nicebro123/EvoCo-RAG \
   --pattern evoco_popqa_data.tar.gz \
   --dir /tmp
+tar -xzf /tmp/evoco_popqa_data.tar.gz -C ../rag_assets
+```
+
+Or download it with `curl`:
+
+```bash
+mkdir -p ../rag_assets
+curl -L \
+  https://github.com/nicebro123/EvoCo-RAG/releases/download/data-v0/evoco_popqa_data.tar.gz \
+  -o /tmp/evoco_popqa_data.tar.gz
 tar -xzf /tmp/evoco_popqa_data.tar.gz -C ../rag_assets
 ```
 
@@ -134,24 +141,48 @@ test -d ../rag_assets/base_models/generator/Meta-Llama-3.1-8B-Instruct
 
 ## 4. Install GPU Environment
 
-This project is intended to train with GPU. Install PyTorch according to your
-CUDA environment first:
+The default reproduction environment is pinned to:
 
-```bash
-# Example only. Use the command from https://pytorch.org/get-started/locally/
-pip install torch --index-url https://download.pytorch.org/whl/cu121
+```text
+Python 3.10 or 3.11
+CUDA 12.1 PyTorch wheels
+torch==2.5.1+cu121
+transformers==4.46.3
+peft==0.14.0
+trl==0.14.0
 ```
 
-Then install the project dependencies:
+Create the environment and install the pinned GPU requirements:
 
 ```bash
+python -m venv .venv
+source .venv/bin/activate
+pip install -U pip
 pip install -r requirements-gpu.txt
 ```
+
+Verify PyTorch can see the GPU:
+
+```bash
+python - <<'PY'
+import torch
+print("torch:", torch.__version__)
+print("cuda runtime:", torch.version.cuda)
+print("cuda available:", torch.cuda.is_available())
+print("gpu count:", torch.cuda.device_count())
+if torch.cuda.is_available():
+    print("gpu:", torch.cuda.get_device_name(0))
+PY
+```
+
+If your server uses another CUDA wheel target, keep the same non-torch package
+versions but replace the PyTorch index/wheel lines in `requirements-gpu.txt`
+with the matching command from https://pytorch.org/get-started/locally/.
 
 If using 4-bit loading, also install:
 
 ```bash
-pip install -U bitsandbytes
+pip install bitsandbytes==0.45.0
 ```
 
 `requirements-cpu.txt` is only for CPU-only code checks. It is not sufficient

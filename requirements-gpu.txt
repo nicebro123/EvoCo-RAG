@@ -1,12 +1,29 @@
-accelerate
-datasets
-numpy
-peft
-pyyaml
-pytest
-sentence-transformers
-transformers
-trl
+# Default GPU reproduction environment.
+# Target: Python 3.10/3.11 + CUDA 12.1 wheels.
+#
+# If your machine uses a different CUDA runtime, install the matching PyTorch
+# wheel first and then install the non-torch dependencies from this file after
+# replacing the PyTorch index/wheel lines below.
 
-# Optional. Install when configs/*.yaml sets models.use_4bit=true.
-# bitsandbytes
+--extra-index-url https://download.pytorch.org/whl/cu121
+
+torch==2.5.1+cu121
+
+accelerate==1.2.1
+datasets==3.2.0
+huggingface-hub==0.36.2
+numpy==1.26.4
+peft==0.14.0
+protobuf==5.29.3
+pytest==8.3.4
+pyyaml==6.0.2
+safetensors==0.4.5
+sentence-transformers==3.3.1
+sentencepiece==0.2.0
+tiktoken==0.8.0
+tokenizers==0.20.3
+transformers==4.46.3
+trl==0.14.0
+
+# Optional. Install only when configs/*.yaml sets models.use_4bit=true.
+# bitsandbytes==0.45.0
