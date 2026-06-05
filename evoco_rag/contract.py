@@ -67,18 +67,28 @@ def build_contract(
         doc_obj = sample.doc_by_id(doc["doc_id"]) or {}
         text = doc_obj.get("text") or doc_obj.get("raw") or ""
         span, overlap = best_evidence_span(sample.question, text)
+        evidence_conf = doc.get("evidence_confidence", overlap)
         selected.append(EvidenceItem(
             doc_id=doc["doc_id"],
             rank=rank,
             doc_score=round(float(doc["score"]), 4),
             relevance_confidence=round(conf, 4),
-            evidence_confidence=round(overlap, 4),
+            evidence_confidence=round(float(evidence_conf), 4),
             span=span,
-            reason="启发式：与问题词汇重叠最高的句子" if span else "",
+            reason=("policy_head" if "evidence_confidence" in doc
+                    else "启发式：与问题词汇重叠最高的句子") if span else "",
         ))
 
     candidate_docs = [
-        {"doc_id": d["doc_id"], "rank": i + 1, "doc_score": round(float(d["score"]), 4)}
+        {
+            "doc_id": d["doc_id"],
+            "rank": i + 1,
+            "doc_score": round(float(d["score"]), 4),
+            **({"evidence_confidence": round(float(d["evidence_confidence"]), 4)}
+               if "evidence_confidence" in d else {}),
+            **({"policy_confidence": round(float(d["policy_confidence"]), 4)}
+               if "policy_confidence" in d else {}),
+        }
         for i, d in enumerate(ranked[:top_k])
     ]
 

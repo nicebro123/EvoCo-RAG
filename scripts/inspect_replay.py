@@ -12,6 +12,7 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from evoco_rag.evaluation.metrics import compute_metrics
+from evoco_rag.replay_buffer import ReplayBuffer
 from evoco_rag.schemas import ReplayExperience
 
 
@@ -36,6 +37,12 @@ def main():
 
     sft = sum(1 for e in exps if e.training_targets.get("large_sft_eligible"))
     print(f"large_sft_eligible: {sft}")
+
+    print("\ncredit assignment summary:")
+    print(json.dumps(ReplayBuffer.credit_assignment_summary(exps), ensure_ascii=False, indent=2))
+
+    print("\naudit trust summary:")
+    print(json.dumps(ReplayBuffer.trust_summary(exps), ensure_ascii=False, indent=2))
 
     print("\naggregate metrics:")
     print(json.dumps(compute_metrics(exps), ensure_ascii=False, indent=2))

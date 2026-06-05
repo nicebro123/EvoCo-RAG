@@ -8,6 +8,7 @@ torch / transformers / peft 延迟导入。
 
 from __future__ import annotations
 
+from collections import Counter
 from typing import Optional
 
 from .auditor import build_audit_prompt, parse_audit
@@ -182,26 +183,86 @@ class LargeGeneratorAuditor:
             show_gold=show_gold,
             candidate_doc_char_limit=self.candidate_doc_char_limit,
         )
-        candidates: list[tuple[LargeAudit, bool, float, int]] = []
+        candidates: list[dict] = []
         total_candidates = self.num_audit_candidates
         for attempt in range(total_candidates):
             temperature = 0.0 if attempt == 0 else self.audit_temperature
             text = self._generate(messages, temperature=temperature)
             audit, ok = parse_audit(text, sample.sample_id, round_id)
             score = self.score_audit_candidate(sample, contract, audit, ok)
-            candidates.append((audit, ok, score, attempt))
+            candidates.append({
+                "audit": audit,
+                "json_valid": ok,
+                "score": score,
+                "attempt": attempt,
+                "temperature": temperature,
+                "raw_text": text,
+            })
 
         extra_retries = max(0, self.json_retry - total_candidates)
         for retry in range(extra_retries):
-            if any(ok for _, ok, _, _ in candidates):
+            if any(c["json_valid"] for c in candidates):
                 break
             text = self._generate(messages, temperature=self.audit_temperature)
             audit, ok = parse_audit(text, sample.sample_id, round_id)
             score = self.score_audit_candidate(sample, contract, audit, ok)
-            candidates.append((audit, ok, score, total_candidates + retry))
+            candidates.append({
+                "audit": audit,
+                "json_valid": ok,
+                "score": score,
+                "attempt": total_candidates + retry,
+                "temperature": self.audit_temperature,
+                "raw_text": text,
+            })
 
-        best = max(candidates, key=lambda x: (x[2], x[1], -x[3]))
-        return best[0], best[1]
+        best = max(candidates, key=lambda x: (x["score"], x["json_valid"], -x["attempt"]))
+
+        answers = [
+            (c["audit"].final_answer or "").strip().lower()
+            for c in candidates
+            if c["audit"].final_answer
+        ]
+        support_levels = [c["audit"].support_level for c in candidates]
+        failure_types = [c["audit"].failure_type for c in candidates]
+
+        def majority_ratio(values: list[str]) -> float:
+            if not values:
+                return 0.0
+            return Counter(values).most_common(1)[0][1] / len(values)
+
+        self_consistency = round(
+            (
+                majority_ratio(answers)
+                + majority_ratio(support_levels)
+                + majority_ratio(failure_types)
+            ) / 3.0,
+            4,
+        )
+        summaries = []
+        for c in candidates:
+            a = c["audit"]
+            summaries.append({
+                "attempt": c["attempt"],
+                "temperature": c["temperature"],
+                "json_valid": c["json_valid"],
+                "score": c["score"],
+                "final_answer": a.final_answer,
+                "used_doc_ids": a.used_doc_ids,
+                "support_level": a.support_level,
+                "failure_type": a.failure_type,
+                "raw_text": (c["raw_text"] or "")[:2000],
+            })
+
+        best_audit = best["audit"]
+        best_audit.audit_metadata = {
+            **(best_audit.audit_metadata or {}),
+            "num_candidates": len(candidates),
+            "selected_attempt": best["attempt"],
+            "selected_candidate_score": best["score"],
+            "self_consistency": self_consistency,
+            "candidate_summaries": summaries,
+        }
+        return best_audit, best["json_valid"]
 
     def save_lora(self, out_dir: str) -> None:
         self.model.save_pretrained(out_dir)

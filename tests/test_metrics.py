@@ -25,7 +25,9 @@ def test_metrics_keys_and_accuracy():
     m = compute_metrics(exps)
     for key in ("accuracy", "recall_at_k", "mrr", "evidence_support_rate",
                 "citation_correctness", "unsupported_answer_rate",
-                "avg_selected_docs", "audit_call_rate"):
+                "avg_selected_docs", "audit_call_rate",
+                "attribution_case_distribution", "wrong_retriever_reward_rate",
+                "audit_json_valid_rate", "audit_trust_weight_mean"):
         assert key in m
     assert m["num_examples"] == 2
     assert m["accuracy"] == 50.0  # 一对一错
@@ -37,6 +39,8 @@ def test_unsupported_answer_rate():
     m = compute_metrics(exps)
     assert m["unsupported_answer_rate"] == 1.0
     assert m["evidence_support_rate"] == 0.0
+    assert m["wrong_retriever_reward_rate"] == 1.0
+    assert m["attribution_case_distribution"]["parametric_answer_without_support"] == 1
 
 
 def test_empty_metrics():

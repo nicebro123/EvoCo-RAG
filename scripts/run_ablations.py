@@ -80,7 +80,10 @@ def main():
             from evoco_rag.small_model import SmallRagPolicy
             from evoco_rag.trainers.large_trainer import LargeTrainer
             from evoco_rag.trainers.small_trainer import SmallTrainer
-            small_policy = SmallRagPolicy(cfg.models.small_base_path, use_lora=True)
+            small_policy = SmallRagPolicy(
+                cfg.models.small_base_path,
+                use_lora=True,
+                use_policy_heads=cfg.small_policy.use_policy_heads)
             large_auditor = LargeGeneratorAuditor(cfg.models.large_base_path, use_lora=True,
                                                   use_4bit=cfg.models.use_4bit,
                                                   max_prompt_length=cfg.runtime.max_prompt_length,
@@ -88,8 +91,13 @@ def main():
                                                   candidate_doc_char_limit=cfg.runtime.candidate_doc_char_limit,
                                                   num_audit_candidates=cfg.runtime.num_audit_candidates,
                                                   audit_temperature=cfg.runtime.audit_temperature)
-            small_trainer = SmallTrainer(small_policy, lr=cfg.training.small_lr,
-                                         batch_size=cfg.training.batch_size)
+            small_trainer = SmallTrainer(
+                small_policy,
+                lr=cfg.training.small_lr,
+                batch_size=cfg.training.batch_size,
+                evidence_loss_weight=cfg.small_policy.evidence_loss_weight,
+                action_loss_weight=cfg.small_policy.action_loss_weight,
+                calibration_loss_weight=cfg.small_policy.calibration_loss_weight)
             large_trainer = LargeTrainer(
                 large_auditor,
                 lr=cfg.training.large_lr,

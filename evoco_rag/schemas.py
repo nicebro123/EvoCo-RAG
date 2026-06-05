@@ -74,6 +74,19 @@ class FeedbackLabel:
     ALL = {POSITIVE, NEGATIVE, HARD_NEGATIVE, IGNORE}
 
 
+class AttributionCase:
+    BOTH_SUCCESS = "both_success"
+    PARAMETRIC_ANSWER_WITHOUT_SUPPORT = "parametric_answer_without_support"
+    RETRIEVER_SUCCESS_GENERATOR_FAIL = "retriever_success_generator_fail"
+    BOTH_FAIL = "both_fail"
+    ALL = {
+        BOTH_SUCCESS,
+        PARAMETRIC_ANSWER_WITHOUT_SUPPORT,
+        RETRIEVER_SUCCESS_GENERATOR_FAIL,
+        BOTH_FAIL,
+    }
+
+
 def _require(cond: bool, msg: str) -> None:
     if not cond:
         raise ValueError(msg)
@@ -230,6 +243,7 @@ class LargeAudit:
     failure_type: str = FailureType.NONE
     small_model_feedback: list[dict] = field(default_factory=list)
     suggested_action: str = RetrievalAction.ANSWER_NOW
+    audit_metadata: dict = field(default_factory=dict)
 
     def validate(self) -> "LargeAudit":
         _require(bool(self.sample_id), "LargeAudit 缺少 sample_id")
@@ -255,6 +269,7 @@ class LargeAudit:
             failure_type=d.get("failure_type", FailureType.NONE),
             small_model_feedback=d.get("small_model_feedback", []),
             suggested_action=d.get("suggested_action", RetrievalAction.ANSWER_NOW),
+            audit_metadata=d.get("audit_metadata", {}),
         ).validate()
 
     def to_dict(self) -> dict:
@@ -273,6 +288,7 @@ class RuleVerification:
     support_rule_passed: bool = False
     json_valid: bool = True
     audit_trust_weight: float = 0.0
+    trust_components: dict = field(default_factory=dict)
     notes: list[str] = field(default_factory=list)
 
     @classmethod
@@ -285,6 +301,7 @@ class RuleVerification:
             support_rule_passed=d.get("support_rule_passed", False),
             json_valid=d.get("json_valid", True),
             audit_trust_weight=d.get("audit_trust_weight", 0.0),
+            trust_components=d.get("trust_components", {}),
             notes=d.get("notes", []),
         )
 
@@ -303,16 +320,19 @@ class RewardBreakdown:
     calibration_reward: float = 0.0
     cost_penalty: float = 0.0
     total_reward: float = 0.0
+    attribution_case: str = ""
 
     def to_dict(self) -> dict:
         return asdict(self)
 
     @classmethod
     def from_dict(cls, d: dict) -> "RewardBreakdown":
-        return cls(**{k: d.get(k, 0.0) for k in (
+        values = {k: d.get(k, 0.0) for k in (
             "answer_reward", "support_reward", "citation_reward",
             "calibration_reward", "cost_penalty", "total_reward",
-        )})
+        )}
+        values["attribution_case"] = d.get("attribution_case", "")
+        return cls(**values)
 
 
 @dataclass

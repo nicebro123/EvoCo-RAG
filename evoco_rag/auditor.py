@@ -173,6 +173,10 @@ def fallback_audit(sample_id: str, round_id: int, raw_text: str = "") -> LargeAu
         support_level=SupportLevel.UNSUPPORTED,
         failure_type=FailureType.NONE,
         suggested_action=RetrievalAction.ANSWER_NOW,
+        audit_metadata={
+            "parse_status": "fallback",
+            "raw_text": (raw_text or "")[:2000],
+        },
     )
 
 
@@ -185,6 +189,11 @@ def parse_audit(text: str, sample_id: str, round_id: int) -> tuple[LargeAudit, b
     block.setdefault("round", round_id)
     try:
         audit = LargeAudit.from_dict(_sanitize(block))
+        audit.audit_metadata = {
+            **(audit.audit_metadata or {}),
+            "parse_status": "parsed",
+            "raw_json": block,
+        }
         return audit, True
     except ValueError:
         return fallback_audit(sample_id, round_id, text), False

@@ -441,7 +441,44 @@ generator 根据 top1_doc 生成答案
 5. 新增 replay buffer，保存每轮合约、答案、审计和奖励。
 6. reranker 增加 action head，预测 `answer_now / retrieve_more / rewrite_query / ask_auditor`。
 
-## 13. 关键风险与解决方案
+## 13. 面向 CCF-A 的待完成创新点 TODO
+
+当前方案已经具备“证据合约 + 大模型审计 + 分解奖励 + 双 LoRA 闭环”的原型，但若目标是 CCF-A 级别投稿，还需要把创新从工程流程进一步强化为可验证的学习机制。下面的 TODO 使用统一编号 `ECR-*`，与代码开发文档中的同名 TODO 严格对应。
+
+| 编号 | 待完成创新点 | 论文中要证明的问题 | 当前状态 | 需要补强的证据 | 对应代码 TODO |
+|---|---|---|---|---|---|
+| ECR-1 | 可训练的小模型证据-动作-置信度策略 | 小模型是否真的从 reranker 升级为低成本 RAG policy model | 当前主要是 reranker 打分 + 启发式合约 | evidence/action/calibration head 的训练损失、消融和校准曲线 | `small_model.py`、`small_trainer.py`、`schemas.py`、`config.py` |
+| ECR-2 | 责任归因式 credit assignment | 答案正确时如何避免错误奖励检索器，答案错误时如何识别生成失败 | 当前已有四象限 reward 和 rule verifier | 与 answer-only reward 的对照、错误奖励率下降、failure_type 分布 | `rewards.py`、`verifier.py`、`replay_buffer.py` |
+| ECR-3 | 可靠审计与抗噪声自训练 | 大模型审计是否足够可靠，错误审计是否会污染小模型 | 当前已有 JSON 解析、规则验证、多候选审计打分 | 审计一致性、人工抽样一致率、trust-weight 过滤消融 | `large_model.py`、`auditor.py`、`verifier.py`、`replay_buffer.py` |
+| ECR-4 | 成本感知动态检索动作 | 系统是否能在 accuracy 与调用成本之间自适应权衡 | 当前 action 多为启发式，训练目标尚未完全落地 | 固定 top-k vs 动态 action、accuracy-cost Pareto frontier | `contract.py`、`small_model.py`、`small_trainer.py`、`evaluation/metrics.py` |
+| ECR-5 | 多粒度证据合约 | 证据合约是否能从文档级扩展到句子级、span 级和多跳证据组合 | 当前主要是文档级 + 句子启发式 span | sentence/span citation correctness、多跳证据覆盖率 | `contract.py`、`schemas.py`、`text_utils.py`、`verifier.py` |
+| ECR-6 | 大模型忠实生成与审计格式协同优化 | 大模型是否不仅答对，还能稳定引用证据并输出可靠审计 | 当前已有 SFT 入口和结构化输出约束 | SFT/GRPO/DPO 对 JSON parse rate、unsupported answer rate 的贡献 | `large_trainer.py`、`large_model.py`、`auditor.py` |
+| ECR-7 | 多轮协同进化稳定性 | 大小模型多轮互相学习是否带来持续收益，而不是单轮伪标签噪声 | 当前支持 round 级训练和 checkpoint | round-by-round 曲线、漂移检测、early stop、replay 质量变化 | `coevolution_trainer.py`、`replay_buffer.py`、`evaluation/evaluator.py` |
+| ECR-8 | 跨数据集和强基线验证 | 方法是否只是 PopQA 适配，还是通用 RAG 机制 | 当前主要围绕 PopQA | PopQA + NQ + HotpotQA/2Wiki + ASQA，多强基线和完整消融 | `data.py`、`configs/`、`scripts/run_ablations.py`、`evaluation/metrics.py` |
+
+### 13.1 最核心的三条投稿主线
+
+如果篇幅和工程时间有限，应优先完成以下三条，因为它们最能支撑 CCF-A 级别的“方法贡献”：
+
+1. **ECR-1 + ECR-2：责任归因驱动的小模型策略学习**
+   重点证明小模型不是被动 reranker，而是在大模型审计反馈下学习证据选择、动作决策和置信度校准。
+
+2. **ECR-3 + ECR-7：可靠审计约束下的自进化**
+   重点证明自训练不会因为大模型审计噪声而崩坏，系统通过规则验证、trust weight、replay 过滤和多轮曲线保持稳定提升。
+
+3. **ECR-4 + ECR-8：质量-成本权衡与跨数据集泛化**
+   重点证明 EvoCo-RAG 不只是提高准确率，还能以较低大模型调用成本达到更好的 evidence support 和 citation correctness。
+
+### 13.2 必须避免的弱表述
+
+为了保持论文严谨性，当前阶段不宜直接声称：
+
+- “小模型生成完整自然语言证据合约”：第一阶段小模型只输出排序分数，合约由打分骨架和规则构造器共同形成。
+- “系统已经实现完全自主进化”：当前更准确的说法是“参数高效的多轮协同自训练框架”，是否稳定自进化需要由 ECR-7 的曲线证明。
+- “大模型审计天然可靠”：必须强调规则验证、审计置信权重、多候选一致性和人工抽样验证。
+- “方法只靠 PopQA 即可证明通用性”：PopQA 只能验证实体属性问答，A 会投稿至少需要加入开放域和多跳数据集。
+
+## 14. 关键风险与解决方案
 
 ### 风险一：大模型审计反馈可能不可靠
 
@@ -478,18 +515,18 @@ generator 根据 top1_doc 生成答案
 - 使用 hard negative mining，但限制低质量伪标签比例；
 - 定期在验证集上 early stop。
 
-## 14. 论文标题候选
+## 15. 论文标题候选
 
 1. **EvoCo-RAG: Evidence-Contract Driven Co-Evolution of Small and Large Models for Retrieval-Augmented Generation**
 2. **Small Proposes, Large Audits: Evidence-Grounded Co-Evolution for Efficient RAG**
 3. **Contract-RAG: Auditable Small-Large Model Collaboration for Faithful Retrieval-Augmented Generation**
 4. **Toward Self-Evolving RAG: Responsibility-Aware Training of Retriever and Generator**
 
-## 15. 摘要草稿
+## 16. 摘要草稿
 
 Retrieval-Augmented Generation (RAG) improves the factuality of large language models by conditioning generation on external documents. However, existing RAG systems often conflate answer correctness with retrieval quality: a model may produce the correct answer from parametric knowledge even when retrieved evidence is irrelevant, causing misleading feedback for retrievers. We propose EvoCo-RAG, an evidence-contract driven co-evolution framework for small-large model collaboration in RAG. In EvoCo-RAG, a small model acts as a lightweight RAG policy model that proposes an auditable evidence contract, including selected evidence, confidence estimates, and retrieval actions. A large model then generates the answer and audits whether the proposed evidence truly supports the answer, producing structured feedback with failure attribution. The feedback is decomposed into answer correctness, evidence support, citation correctness, confidence calibration, and retrieval cost, and is used to update both models through parameter-efficient LoRA adapters. This responsibility-aware training prevents incorrect reward assignment and enables the small model to learn adaptive retrieval policies while the large model learns faithful evidence-grounded generation. Experiments on open-domain and multi-hop QA benchmarks will evaluate answer accuracy, evidence support, citation correctness, and cost-quality trade-offs.
 
-## 16. 相关工作链接
+## 17. 相关工作链接
 
 - Self-RAG: Learning to Retrieve, Generate, and Critique through Self-Reflection. https://arxiv.org/abs/2310.11511
 - Corrective Retrieval Augmented Generation. https://arxiv.org/abs/2401.15884

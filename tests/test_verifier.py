@@ -44,3 +44,23 @@ def test_high_trust_when_all_rules_pass():
     audit = make_audit(final_answer="politician", used_doc_ids=[0])
     v = verify(sample, contract, audit)
     assert v.audit_trust_weight >= 0.9
+
+
+def test_trust_components_are_explainable():
+    sample = make_sample()
+    contract = make_contract(selected_doc_ids=[0])
+    audit = make_audit(final_answer="politician", used_doc_ids=[0])
+    v = verify(sample, contract, audit)
+    assert v.trust_components["json_valid_score"] == 1.0
+    assert v.trust_components["citation_score"] == 1.0
+    assert v.trust_components["support_rule_score"] == 1.0
+
+
+def test_low_self_consistency_lowers_trust():
+    sample = make_sample()
+    contract = make_contract(selected_doc_ids=[0])
+    audit = make_audit(final_answer="politician", used_doc_ids=[0])
+    audit.audit_metadata["self_consistency"] = 0.2
+    v = verify(sample, contract, audit)
+    assert v.audit_trust_weight < 0.9
+    assert v.trust_components["self_consistency_score"] == 0.2

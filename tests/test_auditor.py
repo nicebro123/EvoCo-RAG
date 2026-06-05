@@ -30,6 +30,8 @@ def test_parse_audit_valid():
     assert ok is True
     assert audit.final_answer == "politician"
     assert audit.used_doc_ids == [0]
+    assert audit.audit_metadata["parse_status"] == "parsed"
+    assert audit.audit_metadata["raw_json"]["final_answer"] == "politician"
 
 
 def test_parse_audit_downgrades_illegal_enum():
@@ -47,6 +49,8 @@ def test_parse_audit_fallback_on_garbage():
     audit, ok = parse_audit("no json here at all", "s1", 1)
     assert ok is False
     assert audit.sample_id == "s1"
+    assert audit.audit_metadata["parse_status"] == "fallback"
+    assert "no json" in audit.audit_metadata["raw_text"]
 
 
 def test_build_audit_prompt_uses_configurable_doc_limit():

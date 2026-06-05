@@ -11,6 +11,7 @@ from dataclasses import dataclass
 
 from .schemas import (
     Answerability,
+    AttributionCase,
     EvidenceContract,
     FailureType,
     LargeAudit,
@@ -32,6 +33,17 @@ class RewardWeights:
     calibration_weight: float = 0.2
     selected_doc_cost: float = 0.05
     retrieval_round_cost: float = 0.1
+
+
+def classify_attribution_case(answer_match: bool, support_rule_passed: bool) -> str:
+    """Map answer/support outcomes to the responsibility attribution quadrant."""
+    if answer_match and support_rule_passed:
+        return AttributionCase.BOTH_SUCCESS
+    if answer_match and not support_rule_passed:
+        return AttributionCase.PARAMETRIC_ANSWER_WITHOUT_SUPPORT
+    if (not answer_match) and support_rule_passed:
+        return AttributionCase.RETRIEVER_SUCCESS_GENERATOR_FAIL
+    return AttributionCase.BOTH_FAIL
 
 
 def _predicted_confidence_bucket(contract: EvidenceContract) -> str:
@@ -86,6 +98,8 @@ def compute_decomposed_reward(
     cost_penalty = w.selected_doc_cost * num_selected + w.retrieval_round_cost * num_rounds
 
     total = answer_reward + support_reward + citation_reward + calibration_reward - cost_penalty
+    attribution_case = classify_attribution_case(
+        verification.answer_match, verification.support_rule_passed)
 
     return RewardBreakdown(
         answer_reward=round(answer_reward, 4),
@@ -94,6 +108,7 @@ def compute_decomposed_reward(
         calibration_reward=round(calibration_reward, 4),
         cost_penalty=round(cost_penalty, 4),
         total_reward=round(total, 4),
+        attribution_case=attribution_case,
     )
 
 
@@ -126,6 +141,7 @@ def build_training_targets(
     """
     answer_match = verification.answer_match
     support = verification.support_rule_passed
+    attribution_case = classify_attribution_case(answer_match, support)
 
     selected_ids = contract.selected_doc_ids()
     candidate_ids = contract.candidate_doc_ids()
@@ -133,6 +149,7 @@ def build_training_targets(
     small_positive_doc_ids: list[int] = []
     small_negative_doc_ids: list[int] = []
     failure_type = audit.failure_type
+    do_not_reward_retriever_reason = ""
 
     if support:
         # 检索/重排成功：奖励真正含答案的选中文档，未含答案的候选作负样本。
@@ -154,9 +171,11 @@ def build_training_targets(
         # 检索未命中：不给小模型正反馈；选中文档作负样本，触发 retrieve_more。
         small_positive_doc_ids = []
         small_negative_doc_ids = list(selected_ids)
+        do_not_reward_retriever_reason = "selected_evidence_not_supporting_answer"
         if answer_match:
             # 答案对但证据不支持 → 大模型凭参数知识答对，标记 unsupported_answer
             failure_type = FailureType.UNSUPPORTED_ANSWER
+            do_not_reward_retriever_reason = "parametric_answer_without_support"
 
     # 小模型动作 target
     if support and answer_match:
@@ -174,6 +193,19 @@ def build_training_targets(
         and verification.audit_trust_weight >= trust_threshold
     )
 
+    if attribution_case == AttributionCase.BOTH_SUCCESS:
+        small_credit_weight = 1.0
+        large_credit_weight = 1.0
+    elif attribution_case == AttributionCase.PARAMETRIC_ANSWER_WITHOUT_SUPPORT:
+        small_credit_weight = 0.0
+        large_credit_weight = 0.5
+    elif attribution_case == AttributionCase.RETRIEVER_SUCCESS_GENERATOR_FAIL:
+        small_credit_weight = 1.0
+        large_credit_weight = 0.5
+    else:
+        small_credit_weight = 0.0
+        large_credit_weight = 0.0
+
     return {
         "small_positive_doc_ids": small_positive_doc_ids,
         "small_negative_doc_ids": small_negative_doc_ids,
@@ -181,4 +213,11 @@ def build_training_targets(
         "large_sft_eligible": large_sft_eligible,
         "large_grpo_reward": reward.total_reward,
         "failure_type": failure_type,
+        "attribution_case": attribution_case,
+        "small_credit_weight": small_credit_weight,
+        "large_credit_weight": large_credit_weight,
+        "do_not_reward_retriever_reason": do_not_reward_retriever_reason,
+        "wrong_retriever_reward_if_answer_only": (
+            attribution_case == AttributionCase.PARAMETRIC_ANSWER_WITHOUT_SUPPORT
+        ),
     }

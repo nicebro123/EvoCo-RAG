@@ -66,6 +66,13 @@ def verify(
     if audit.support_level == SupportLevel.FULLY and not support_rule_passed:
         notes.append("大模型自报 fully_supported 但规则未通过，疑似 unsupported_answer")
 
+    audit_metadata = audit.audit_metadata or {}
+    try:
+        self_consistency_score = float(audit_metadata.get("self_consistency", 1.0))
+    except (TypeError, ValueError):
+        self_consistency_score = 1.0
+    self_consistency_score = max(0.0, min(1.0, self_consistency_score))
+
     # 信任权重
     if json_valid and answer_match and cited_doc_contains_answer:
         audit_trust_weight = high_trust
@@ -76,6 +83,18 @@ def verify(
     if not json_valid:
         audit_trust_weight = min(audit_trust_weight, low_trust)
         notes.append("audit JSON 非法或解析失败，降低信任权重")
+    if self_consistency_score < 0.5:
+        audit_trust_weight = min(audit_trust_weight, (high_trust + low_trust) / 2)
+        notes.append("audit 多候选一致性较低，降低信任权重")
+
+    trust_components = {
+        "json_valid_score": 1.0 if json_valid else 0.0,
+        "answer_match_score": 1.0 if answer_match else 0.0,
+        "citation_score": 1.0 if cited_doc_contains_answer else 0.0,
+        "selected_doc_score": 1.0 if used_doc_in_selected_evidence else 0.0,
+        "support_rule_score": 1.0 if support_rule_passed else 0.0,
+        "self_consistency_score": round(self_consistency_score, 4),
+    }
 
     return RuleVerification(
         sample_id=sample.sample_id,
@@ -85,5 +104,6 @@ def verify(
         support_rule_passed=support_rule_passed,
         json_valid=json_valid,
         audit_trust_weight=round(audit_trust_weight, 4),
+        trust_components=trust_components,
         notes=notes,
     )

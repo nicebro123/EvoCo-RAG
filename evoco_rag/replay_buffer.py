@@ -11,6 +11,7 @@ import json
 import glob
 import os
 import random
+from collections import Counter
 from typing import Iterable, Optional
 
 from .schemas import ReplayExperience
@@ -138,3 +139,69 @@ class ReplayBuffer:
         merged = high + low
         rng.shuffle(merged)
         return merged
+
+    # ---- 统计 ----
+    @staticmethod
+    def attribution_distribution(exps: list[ReplayExperience]) -> dict:
+        """Return counts by responsibility-attribution case."""
+        counter = Counter()
+        for e in exps:
+            case = e.training_targets.get("attribution_case") or e.rewards.get("attribution_case") or "unknown"
+            counter[case] += 1
+        return dict(counter)
+
+    @staticmethod
+    def credit_assignment_summary(exps: list[ReplayExperience]) -> dict:
+        """Metrics for ECR-2: answer-only retriever mis-credit and quadrant counts."""
+        total = len(exps)
+        wrong = sum(
+            1 for e in exps
+            if e.training_targets.get("wrong_retriever_reward_if_answer_only")
+        )
+        filtered = sum(
+            1 for e in exps
+            if e.training_targets.get("do_not_reward_retriever_reason")
+        )
+        return {
+            "num_experiences": total,
+            "attribution_case_distribution": ReplayBuffer.attribution_distribution(exps),
+            "wrong_retriever_reward_count": wrong,
+            "wrong_retriever_reward_rate": (wrong / total) if total else 0.0,
+            "retriever_positive_filtered_count": filtered,
+            "retriever_positive_filtered_rate": (filtered / total) if total else 0.0,
+        }
+
+    @staticmethod
+    def trust_summary(exps: list[ReplayExperience], low_trust_threshold: float = 0.5) -> dict:
+        """Metrics for ECR-3: audit reliability and trust-weight distribution."""
+        total = len(exps)
+        if not total:
+            return {
+                "num_experiences": 0,
+                "audit_json_valid_rate": 0.0,
+                "audit_trust_weight_mean": 0.0,
+                "low_trust_rate": 0.0,
+                "audit_self_consistency_mean": None,
+            }
+
+        json_valid = [1.0 if e.verification.get("json_valid") else 0.0 for e in exps]
+        trusts = [float(e.verification.get("audit_trust_weight", 0.0)) for e in exps]
+        low = [1.0 if t < low_trust_threshold else 0.0 for t in trusts]
+        consistency = []
+        for e in exps:
+            meta = e.audit.get("audit_metadata") or {}
+            value = meta.get("self_consistency")
+            if value is not None:
+                try:
+                    consistency.append(float(value))
+                except (TypeError, ValueError):
+                    pass
+        return {
+            "num_experiences": total,
+            "audit_json_valid_rate": sum(json_valid) / total,
+            "audit_trust_weight_mean": sum(trusts) / total,
+            "low_trust_rate": sum(low) / total,
+            "audit_self_consistency_mean": (
+                sum(consistency) / len(consistency) if consistency else None
+            ),
+        }

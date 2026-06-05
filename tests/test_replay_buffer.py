@@ -3,6 +3,7 @@ from evoco_rag.schemas import ReplayExperience
 
 
 def _exp(sample_id, failure_type, trust, pos=None, neg=None):
+    attribution_case = "parametric_answer_without_support" if failure_type == "unsupported_answer" else "both_success"
     return ReplayExperience(
         sample_id=sample_id,
         round=0,
@@ -10,14 +11,19 @@ def _exp(sample_id, failure_type, trust, pos=None, neg=None):
         answers=["a"],
         documents=[{"doc_id": 0}],
         contract={},
-        audit={"failure_type": failure_type},
-        verification={"audit_trust_weight": trust},
-        rewards={"total_reward": 1.0},
+        audit={"failure_type": failure_type, "audit_metadata": {"self_consistency": 0.75}},
+        verification={"audit_trust_weight": trust, "json_valid": trust >= 0.5},
+        rewards={"total_reward": 1.0, "attribution_case": attribution_case},
         training_targets={
             "failure_type": failure_type,
+            "attribution_case": attribution_case,
             "small_positive_doc_ids": pos or [],
             "small_negative_doc_ids": neg or [],
             "large_sft_eligible": failure_type == "none",
+            "wrong_retriever_reward_if_answer_only": failure_type == "unsupported_answer",
+            "do_not_reward_retriever_reason": (
+                "parametric_answer_without_support" if failure_type == "unsupported_answer" else ""
+            ),
         },
     )
 
@@ -71,3 +77,23 @@ def test_large_sft_selection(tmp_path):
     loaded = rb.read(round_id=0)
     sft = rb.sample_large_sft(loaded)
     assert {e.sample_id for e in sft} == {"s1"}
+
+
+def test_credit_assignment_summary_counts_wrong_retriever_reward(tmp_path):
+    rb = ReplayBuffer(root=str(tmp_path / "replay"))
+    exps = [_exp("s1", "none", 0.9), _exp("s2", "unsupported_answer", 0.9)]
+    rb.write(exps, round_id=0)
+    summary = rb.credit_assignment_summary(rb.read(0))
+    assert summary["wrong_retriever_reward_count"] == 1
+    assert summary["wrong_retriever_reward_rate"] == 0.5
+    assert summary["attribution_case_distribution"]["parametric_answer_without_support"] == 1
+
+
+def test_trust_summary_reports_json_and_consistency(tmp_path):
+    rb = ReplayBuffer(root=str(tmp_path / "replay"))
+    exps = [_exp("s1", "none", 0.9), _exp("s2", "retrieval_miss", 0.3)]
+    rb.write(exps, round_id=0)
+    summary = rb.trust_summary(rb.read(0))
+    assert summary["audit_json_valid_rate"] == 0.5
+    assert summary["low_trust_rate"] == 0.5
+    assert summary["audit_self_consistency_mean"] == 0.75

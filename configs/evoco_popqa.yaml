@@ -29,6 +29,12 @@ runtime:
   max_prompt_length: 3072
   max_completion_length: 1024
 
+small_policy:
+  use_policy_heads: false   # ECR-1: 默认关闭；开启后训练 evidence/action/confidence heads
+  evidence_loss_weight: 1.0
+  action_loss_weight: 0.5
+  calibration_loss_weight: 0.2
+
 training:
   num_rounds: 3
   batch_size: 4

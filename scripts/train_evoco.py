@@ -72,7 +72,8 @@ def main():
     small_policy = SmallRagPolicy(
         base_path=cfg.models.small_base_path,
         lora_dir=small_init,
-        use_lora=True)
+        use_lora=True,
+        use_policy_heads=cfg.small_policy.use_policy_heads)
     large_auditor = LargeGeneratorAuditor(
         base_path=cfg.models.large_base_path,
         lora_dir=large_init,
@@ -83,8 +84,13 @@ def main():
         num_audit_candidates=cfg.runtime.num_audit_candidates,
         audit_temperature=cfg.runtime.audit_temperature)
 
-    small_trainer = SmallTrainer(small_policy, lr=cfg.training.small_lr,
-                                 batch_size=cfg.training.batch_size)
+    small_trainer = SmallTrainer(
+        small_policy,
+        lr=cfg.training.small_lr,
+        batch_size=cfg.training.batch_size,
+        evidence_loss_weight=cfg.small_policy.evidence_loss_weight,
+        action_loss_weight=cfg.small_policy.action_loss_weight,
+        calibration_loss_weight=cfg.small_policy.calibration_loss_weight)
     large_trainer = LargeTrainer(
         large_auditor,
         lr=cfg.training.large_lr,

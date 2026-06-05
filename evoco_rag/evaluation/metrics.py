@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+from collections import Counter
 from typing import Iterable
 
 import numpy as np
@@ -40,6 +41,10 @@ def compute_metrics(experiences: Iterable) -> dict:
     selected_counts, audit_calls, cost_penalties = [], [], []
     used_precisions = []
     confidences, outcomes = [], []
+    attribution_cases = Counter()
+    action_counts = Counter()
+    wrong_retriever_rewards = []
+    trust_weights, json_valid, self_consistency = [], [], []
 
     for e in exps:
         v = e.get("verification", {})
@@ -48,6 +53,7 @@ def compute_metrics(experiences: Iterable) -> dict:
         r = e.get("rewards", {})
         docs = e.get("documents", [])
         answers = e.get("answers", [])
+        tt = e.get("training_targets", {})
 
         am = bool(v.get("answer_match"))
         sp = bool(v.get("support_rule_passed"))
@@ -55,6 +61,9 @@ def compute_metrics(experiences: Iterable) -> dict:
         support.append(sp)
         citation.append(bool(v.get("cited_doc_contains_answer")))
         unsupported.append(1.0 if (am and not sp) else 0.0)
+        attribution_cases[tt.get("attribution_case") or r.get("attribution_case") or "unknown"] += 1
+        wrong_retriever_rewards.append(
+            1.0 if tt.get("wrong_retriever_reward_if_answer_only") else 0.0)
 
         # 检索：candidate_docs 已按分数降序（top-k）
         ranked_ids = [cd.get("doc_id") for cd in c.get("candidate_docs", [])]
@@ -80,12 +89,24 @@ def compute_metrics(experiences: Iterable) -> dict:
         selected_counts.append(cost.get("num_selected_docs", 0))
         audit_calls.append(1.0 if (a.get("final_answer") or used) else 0.0)
         cost_penalties.append(r.get("cost_penalty", 0.0))
+        action = c.get("retrieval_action")
+        if action:
+            action_counts[action] += 1
 
         # 校准：top 选中证据的 relevance_confidence vs 命中
         sel = c.get("selected_evidence", [])
         if sel:
             confidences.append(max(s.get("relevance_confidence", 0.0) for s in sel))
             outcomes.append(1.0 if am else 0.0)
+
+        trust_weights.append(float(v.get("audit_trust_weight", 0.0)))
+        json_valid.append(1.0 if v.get("json_valid") else 0.0)
+        meta = a.get("audit_metadata") or {}
+        if meta.get("self_consistency") is not None:
+            try:
+                self_consistency.append(float(meta.get("self_consistency")))
+            except (TypeError, ValueError):
+                pass
 
     num = len(exps)
     num_correct = sum(answer_match)
@@ -103,10 +124,18 @@ def compute_metrics(experiences: Iterable) -> dict:
         "citation_correctness": _mean(citation),
         "used_doc_precision": _mean(used_precisions) if used_precisions else 0.0,
         "unsupported_answer_rate": _mean(unsupported),
+        "attribution_case_distribution": dict(attribution_cases),
+        "wrong_retriever_reward_rate": _mean(wrong_retriever_rewards),
         # 策略成本
         "avg_selected_docs": _mean(selected_counts),
         "audit_call_rate": _mean(audit_calls),
+        "action_distribution": dict(action_counts),
         "cost_per_correct_answer": (sum(cost_penalties) / num_correct) if num_correct else None,
+        # 审计可靠性
+        "audit_json_valid_rate": _mean(json_valid),
+        "audit_trust_weight_mean": _mean(trust_weights),
+        "low_trust_rate": _mean(1.0 if t < 0.5 else 0.0 for t in trust_weights),
+        "audit_self_consistency_mean": _mean(self_consistency) if self_consistency else None,
         # 校准
         "confidence_success_correlation": _corr(confidences, outcomes),
         "ece": _ece(confidences, outcomes),

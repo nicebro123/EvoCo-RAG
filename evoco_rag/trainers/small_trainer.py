@@ -12,13 +12,19 @@ from typing import Optional
 
 class SmallTrainer:
     def __init__(self, policy, lr: float = 5e-5, margin: float = 1.0,
-                 max_length: int = 512, batch_size: int = 4):
+                 max_length: int = 512, batch_size: int = 4,
+                 evidence_loss_weight: float = 1.0,
+                 action_loss_weight: float = 0.5,
+                 calibration_loss_weight: float = 0.2):
         import torch  # noqa: F401
         self.policy = policy
         self.lr = lr
         self.margin = margin
         self.max_length = max_length
         self.batch_size = batch_size
+        self.evidence_loss_weight = evidence_loss_weight
+        self.action_loss_weight = action_loss_weight
+        self.calibration_loss_weight = calibration_loss_weight
 
     def _doc_text(self, documents: list[dict], doc_id: int) -> str:
         for d in documents:
@@ -38,30 +44,46 @@ class SmallTrainer:
         model = self.policy.model
         tok = self.policy.tokenizer
         device = self.policy.device
-        optimizer = Adam(filter(lambda p: p.requires_grad, model.parameters()), lr=self.lr)
+        policy_heads = getattr(self.policy, "policy_heads", None)
+        params = list(filter(lambda p: p.requires_grad, model.parameters()))
+        if policy_heads is not None:
+            params.extend(policy_heads.parameters())
+        optimizer = Adam(params, lr=self.lr)
 
         usable = [p for p in pairs if p["positive_doc_ids"] and p["negative_doc_ids"]]
         if not usable:
             return {"trained_samples": 0, "skipped": len(pairs), "avg_loss": None}
 
         model.train()
+        if policy_heads is not None:
+            policy_heads.train()
         total_loss, steps = 0.0, 0
+        rank_loss_total, evidence_loss_total, action_loss_total, calibration_loss_total = 0.0, 0.0, 0.0, 0.0
         for _ in range(epochs):
             for start in range(0, len(usable), self.batch_size):
                 batch = usable[start:start + self.batch_size]
                 all_pairs, split, pos_lens = [], [0], []
+                evidence_targets = []
+                action_targets = []
                 for ex in batch:
                     pos = [(ex["question"], self._doc_text(ex["documents"], d))
                            for d in ex["positive_doc_ids"]]
                     neg = [(ex["question"], self._doc_text(ex["documents"], d))
                            for d in ex["negative_doc_ids"]]
                     all_pairs.extend(pos + neg)
+                    evidence_targets.extend([1.0] * len(pos) + [0.0] * len(neg))
                     split.append(len(all_pairs))
                     pos_lens.append(len(pos))
+                    action_targets.append(ex.get("action_target"))
 
                 inputs = tok(all_pairs, padding=True, truncation=True,
                              return_tensors="pt", max_length=self.max_length).to(device)
-                scores = model(**inputs, return_dict=True).logits.view(-1)
+                out = model(
+                    **inputs,
+                    return_dict=True,
+                    output_hidden_states=policy_heads is not None,
+                )
+                scores = out.logits.view(-1)
 
                 batch_loss = 0.0
                 valid = 0
@@ -77,18 +99,58 @@ class SmallTrainer:
                     valid += 1
                 if valid == 0:
                     continue
-                batch_loss = batch_loss / valid
+                rank_loss = batch_loss / valid
+                loss = rank_loss
+                evidence_loss = torch.tensor(0.0, device=device)
+                action_loss = torch.tensor(0.0, device=device)
+                calibration_loss = torch.tensor(0.0, device=device)
+
+                if policy_heads is not None and out.hidden_states:
+                    pooled = out.hidden_states[-1][:, 0]
+                    head_out = policy_heads(pooled)
+                    target = torch.tensor(evidence_targets, dtype=torch.float32, device=device)
+                    if self.evidence_loss_weight:
+                        evidence_loss = F.binary_cross_entropy_with_logits(
+                            head_out["evidence_logits"].view(-1), target)
+                        loss = loss + self.evidence_loss_weight * evidence_loss
+                    if self.calibration_loss_weight:
+                        calibration_loss = F.binary_cross_entropy_with_logits(
+                            head_out["confidence_logits"].view(-1), target)
+                        loss = loss + self.calibration_loss_weight * calibration_loss
+                    if self.action_loss_weight:
+                        action_rows, action_labels = [], []
+                        label_map = getattr(self.policy, "action_label_to_id", {})
+                        for i, action in enumerate(action_targets):
+                            if action not in label_map:
+                                continue
+                            s, e = split[i], split[i + 1]
+                            action_rows.append(pooled[s:e].mean(dim=0))
+                            action_labels.append(label_map[action])
+                        if action_rows:
+                            action_repr = torch.stack(action_rows, dim=0)
+                            action_logits = policy_heads(action_repr)["action_logits"]
+                            labels = torch.tensor(action_labels, dtype=torch.long, device=device)
+                            action_loss = F.cross_entropy(action_logits, labels)
+                            loss = loss + self.action_loss_weight * action_loss
 
                 optimizer.zero_grad()
-                batch_loss.backward()
+                loss.backward()
                 optimizer.step()
-                total_loss += float(batch_loss.item())
+                total_loss += float(loss.item())
+                rank_loss_total += float(rank_loss.item())
+                evidence_loss_total += float(evidence_loss.item())
+                action_loss_total += float(action_loss.item())
+                calibration_loss_total += float(calibration_loss.item())
                 steps += 1
 
         return {
             "trained_samples": len(usable),
             "skipped": len(pairs) - len(usable),
             "avg_loss": (total_loss / steps) if steps else None,
+            "avg_rank_loss": (rank_loss_total / steps) if steps else None,
+            "avg_evidence_loss": (evidence_loss_total / steps) if steps else None,
+            "avg_action_loss": (action_loss_total / steps) if steps else None,
+            "avg_calibration_loss": (calibration_loss_total / steps) if steps else None,
         }
 
     def save(self, out_dir: str) -> None:

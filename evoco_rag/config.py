@@ -42,6 +42,14 @@ class RuntimeConfig:
 
 
 @dataclass
+class SmallPolicyConfig:
+    use_policy_heads: bool = False
+    evidence_loss_weight: float = 1.0
+    action_loss_weight: float = 0.5
+    calibration_loss_weight: float = 0.2
+
+
+@dataclass
 class ModelsConfig:
     small_base_path: str = "../rag_assets/base_models/reranker/bge-reranker-v2-m3"
     large_base_path: str = "../rag_assets/base_models/generator/Mistral-Nemo-Instruct-2407"
@@ -77,6 +85,7 @@ class EvoCoConfig:
     contract: ContractConfig = field(default_factory=ContractConfig)
     training: TrainingConfig = field(default_factory=TrainingConfig)
     runtime: RuntimeConfig = field(default_factory=RuntimeConfig)
+    small_policy: SmallPolicyConfig = field(default_factory=SmallPolicyConfig)
     reward: RewardWeights = field(default_factory=RewardWeights)
     ablation: AblationConfig = field(default_factory=AblationConfig)
 
@@ -98,6 +107,8 @@ class EvoCoConfig:
                                        if k in TrainingConfig.__dataclass_fields__}),
             runtime=RuntimeConfig(**{k: v for k, v in d.get("runtime", {}).items()
                                      if k in RuntimeConfig.__dataclass_fields__}),
+            small_policy=SmallPolicyConfig(**{k: v for k, v in d.get("small_policy", {}).items()
+                                              if k in SmallPolicyConfig.__dataclass_fields__}),
             reward=RewardWeights(**{k: v for k, v in reward_raw.items()
                                     if k in RewardWeights.__dataclass_fields__}),
             ablation=AblationConfig(**{k: v for k, v in d.get("ablation", {}).items()

@@ -9,7 +9,7 @@ doc0 含答案 'politician'，doc1 不含。通过控制：
 from conftest import make_audit, make_contract, make_sample
 
 from evoco_rag.rewards import build_training_targets, compute_decomposed_reward
-from evoco_rag.schemas import FailureType
+from evoco_rag.schemas import AttributionCase, FailureType
 from evoco_rag.verifier import verify
 
 
@@ -30,6 +30,10 @@ def test_answer_true_support_true():
     assert 0 in t["small_positive_doc_ids"]
     assert t["large_sft_eligible"] is True
     assert r.answer_reward == 1.0 and r.support_reward == 1.0
+    assert r.attribution_case == AttributionCase.BOTH_SUCCESS
+    assert t["attribution_case"] == AttributionCase.BOTH_SUCCESS
+    assert t["small_credit_weight"] == 1.0
+    assert t["large_credit_weight"] == 1.0
 
 
 def test_answer_true_support_false():
@@ -42,6 +46,10 @@ def test_answer_true_support_false():
     assert t["failure_type"] == FailureType.UNSUPPORTED_ANSWER
     assert t["large_sft_eligible"] is False
     assert r.support_reward == 0.0
+    assert r.attribution_case == AttributionCase.PARAMETRIC_ANSWER_WITHOUT_SUPPORT
+    assert t["wrong_retriever_reward_if_answer_only"] is True
+    assert t["small_credit_weight"] == 0.0
+    assert t["do_not_reward_retriever_reason"] == "parametric_answer_without_support"
 
 
 def test_answer_false_support_true():
@@ -55,6 +63,8 @@ def test_answer_false_support_true():
     # 大模型 reward 较低（answer_reward=0）
     assert r.answer_reward == 0.0
     assert t["large_sft_eligible"] is False
+    assert t["attribution_case"] == AttributionCase.RETRIEVER_SUCCESS_GENERATOR_FAIL
+    assert t["small_credit_weight"] == 1.0
 
 
 def test_answer_false_support_false():
@@ -64,6 +74,7 @@ def test_answer_false_support_false():
     assert t["small_positive_doc_ids"] == []
     assert 1 in t["small_negative_doc_ids"]
     assert t["small_action_target"] == "retrieve_more"
+    assert t["attribution_case"] == AttributionCase.BOTH_FAIL
 
 
 def test_cost_penalty_grows_with_selected_docs():
