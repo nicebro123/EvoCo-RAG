@@ -35,7 +35,7 @@ class TrainingConfig:
 @dataclass
 class ModelsConfig:
     small_base_path: str = "../rag_assets/base_models/reranker/bge-reranker-v2-m3"
-    large_base_path: str = "../rag_assets/base_models/generator/Meta-Llama-3.1-8B-Instruct"
+    large_base_path: str = "../rag_assets/base_models/generator/Mistral-Nemo-Instruct-2407"
     small_lora_dir: str = "../rag_assets/checkpoints/evoco_popqa/small"
     large_lora_dir: str = "../rag_assets/checkpoints/evoco_popqa/large"
     use_4bit: bool = False

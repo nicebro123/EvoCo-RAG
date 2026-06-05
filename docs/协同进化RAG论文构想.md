@@ -36,7 +36,7 @@
 EvoCo-RAG 包含两个主要模型：
 
 - **小模型 \(M_s\)**：轻量级 reranker / policy model，例如 `bge-reranker-v2-m3`。负责证据选择、置信度估计、检索动作决策。
-- **大模型 \(M_l\)**：生成式大语言模型，例如 `Meta-Llama-3.1-8B-Instruct`。负责基于证据生成答案，并审计证据是否真正支持答案。
+- **大模型 \(M_l\)**：生成式大语言模型，例如 `mistralai/Mistral-Nemo-Instruct-2407`。负责基于证据生成答案，并审计证据是否真正支持答案。
 
 整体流程如下：
 
@@ -497,4 +497,3 @@ Retrieval-Augmented Generation (RAG) improves the factuality of large language m
 - RankRAG: Unifying Context Ranking with Retrieval-Augmented Generation in LLMs. https://arxiv.org/abs/2407.02485
 - LoRA: Low-Rank Adaptation of Large Language Models. https://arxiv.org/abs/2106.09685
 - BAAI bge-reranker-v2-m3 model card. https://huggingface.co/BAAI/bge-reranker-v2-m3
-

@@ -59,7 +59,8 @@ replay buffer 保存结构化经验
 
 ```text
 小模型 base: ../rag_assets/base_models/reranker/bge-reranker-v2-m3
-大模型 base: ../rag_assets/base_models/generator/Meta-Llama-3.1-8B-Instruct
+大模型 base: ../rag_assets/base_models/generator/Mistral-Nemo-Instruct-2407
+大模型来源: mistralai/Mistral-Nemo-Instruct-2407（12B instruct generator）
 ```
 
 当前工程已按代码和资产分离。`CoRAG-D63F ` 只保留源码、配置、测试和文档，后续可作为 GitHub 仓库；数据、旧 adapter、base model、checkpoint 和输出统一放在同级 `../rag_assets/`，不进入代码仓库。
@@ -393,7 +394,7 @@ top1/top2 分数接近且实体不同 → ask_auditor
 
 职责：
 
-- 加载 `Meta-Llama-3.1-8B-Instruct`。
+- 加载 `mistralai/Mistral-Nemo-Instruct-2407`。
 - 加载或初始化 LoRA。
 - 批量生成。
 - 支持 train mode 和 eval mode。
@@ -802,7 +803,7 @@ data:
 
 models:
   small_base_path: ../rag_assets/base_models/reranker/bge-reranker-v2-m3
-  large_base_path: ../rag_assets/base_models/generator/Meta-Llama-3.1-8B-Instruct
+  large_base_path: ../rag_assets/base_models/generator/Mistral-Nemo-Instruct-2407
   small_lora_dir: ../rag_assets/checkpoints/evoco_popqa/small
   large_lora_dir: ../rag_assets/checkpoints/evoco_popqa/large
 
@@ -844,7 +845,7 @@ runtime:
 | 类型 | 目录 | 说明 |
 |---|---|---|
 | 小模型 base | `../rag_assets/base_models/reranker/bge-reranker-v2-m3` | 不放在代码仓库里，训练时只读取，不覆盖 |
-| 大模型 base | `../rag_assets/base_models/generator/Meta-Llama-3.1-8B-Instruct` | 不放在代码仓库里，训练时只读取，不覆盖 |
+| 大模型 base | `../rag_assets/base_models/generator/Mistral-Nemo-Instruct-2407` | 不放在代码仓库里，训练时只读取，不覆盖 |
 | 旧版小模型 adapter | `../rag_assets/adapters/reranker-CoRAG` | 当前压缩包自带 LoRA，可作为已有结果或迁移参考 |
 | 旧版大模型 adapter | `../rag_assets/adapters/generator-CoRAG` | 当前压缩包自带 LoRA，可作为已有结果或迁移参考 |
 | EvoCo 小模型 checkpoint | `../rag_assets/checkpoints/evoco_popqa/small/round_000` | 新方案每轮保存的小模型 LoRA |

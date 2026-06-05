@@ -28,7 +28,7 @@ LEGACY_DATA_ROOT = os.path.join(LEGACY_ROOT, "data")
 LEGACY_ADAPTER_ROOT = os.path.join(LEGACY_ROOT, "adapters")
 LEGACY_OUTPUT_ROOT = os.path.join(LEGACY_ROOT, "outputs")
 BASE_RERANKER_PATH = os.path.join(ASSET_ROOT, "base_models", "reranker", "bge-reranker-v2-m3")
-BASE_GENERATOR_PATH = os.path.join(ASSET_ROOT, "base_models", "generator", "Meta-Llama-3.1-8B-Instruct")
+BASE_GENERATOR_PATH = os.path.join(ASSET_ROOT, "base_models", "generator", "Mistral-Nemo-Instruct-2407")
 
 
 def ts(msg: str, t0: float) -> float:
@@ -439,7 +439,7 @@ if __name__ == "__main__":
 
     print("\nGenerator init")
     base_model = BASE_GENERATOR_PATH
-    tokenizer_llm = AutoTokenizer.from_pretrained(base_model, use_fast=False, local_files_only=True)
+    tokenizer_llm = AutoTokenizer.from_pretrained(base_model, local_files_only=True)
     tokenizer_llm.pad_token = tokenizer_llm.eos_token
     tokenizer_llm.pad_token_id = tokenizer_llm.eos_token_id
     tokenizer_llm.padding_side = 'left'

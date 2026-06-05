@@ -16,7 +16,7 @@ ASSET_ROOT = os.path.join(os.path.dirname(REPO_DIR), "rag_assets")
 LEGACY_ADAPTER_ROOT = os.path.join(ASSET_ROOT, "legacy", "adapters")
 BASE_RERANKER_PATH = os.path.join(ASSET_ROOT, "base_models", "reranker", "bge-reranker-v2-m3")
 FT_RERANKER_PATH = os.path.join(ASSET_ROOT, "base_models", "reranker", "bge-reranker-v2-m3-ft")
-BASE_GENERATOR_PATH = os.path.join(ASSET_ROOT, "base_models", "generator", "Meta-Llama-3.1-8B-Instruct")
+BASE_GENERATOR_PATH = os.path.join(ASSET_ROOT, "base_models", "generator", "Mistral-Nemo-Instruct-2407")
 
 
 def load_ranker(ranker_path):
@@ -230,7 +230,7 @@ def run_test(e, dataTy,modelTy, stage, methodTy,batch_size=16, use_4bit=False):
     #generator
     base_model = BASE_GENERATOR_PATH
 
-    tokenizer_llm = AutoTokenizer.from_pretrained(base_model, use_fast=False, local_files_only=True)
+    tokenizer_llm = AutoTokenizer.from_pretrained(base_model, local_files_only=True)
     tokenizer_llm.pad_token = tokenizer_llm.eos_token
     tokenizer_llm.pad_token_id = tokenizer_llm.eos_token_id
     tokenizer_llm.padding_side = 'left'
@@ -290,5 +290,4 @@ def run_test(e, dataTy,modelTy, stage, methodTy,batch_size=16, use_4bit=False):
         dataty=dataTy
     )
     return eval_result["accuracy"]
-
 

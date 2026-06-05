@@ -13,7 +13,7 @@ The expected workflow is:
 ```text
 1. Clone this repository
 2. Download the preprocessed PopQA data release
-3. Download the reranker and generator base weights from Hugging Face
+3. Download the reranker and generator base weights
 4. Install GPU dependencies
 5. Run debug training
 6. Run full training
@@ -43,7 +43,7 @@ parent/
     ├── data_v33/Pop/train_labels_list.json
     ├── base_models/
     │   ├── reranker/bge-reranker-v2-m3/
-    │   └── generator/Meta-Llama-3.1-8B-Instruct/
+    │   └── generator/Mistral-Nemo-Instruct-2407/
     ├── checkpoints/
     ├── outputs/
     └── outputs_debug/
@@ -106,16 +106,11 @@ Install the Hugging Face CLI:
 pip install -U "huggingface_hub[cli]"
 ```
 
-Login to Hugging Face. This is required for Llama 3.1 because the model is gated:
+If you are downloading from mainland China, use the Hugging Face mirror before
+running `hf download`:
 
 ```bash
-hf auth login
-```
-
-Before downloading Llama, request/accept access on the model page:
-
-```text
-https://huggingface.co/meta-llama/Meta-Llama-3.1-8B-Instruct
+export HF_ENDPOINT=https://hf-mirror.com
 ```
 
 Download the small reranker:
@@ -125,18 +120,29 @@ hf download BAAI/bge-reranker-v2-m3 \
   --local-dir ../rag_assets/base_models/reranker/bge-reranker-v2-m3
 ```
 
-Download the large generator:
+Download the large generator. The default generator is
+`mistralai/Mistral-Nemo-Instruct-2407`, a stronger 12B instruct model used as the
+large model in EvoCo-RAG:
 
 ```bash
-hf download meta-llama/Meta-Llama-3.1-8B-Instruct \
-  --local-dir ../rag_assets/base_models/generator/Meta-Llama-3.1-8B-Instruct
+hf download mistralai/Mistral-Nemo-Instruct-2407 \
+  --local-dir ../rag_assets/base_models/generator/Mistral-Nemo-Instruct-2407
+```
+
+If you do not use the mirror, the same command works against the official
+Hugging Face endpoint:
+
+```bash
+unset HF_ENDPOINT
+hf download mistralai/Mistral-Nemo-Instruct-2407 \
+  --local-dir ../rag_assets/base_models/generator/Mistral-Nemo-Instruct-2407
 ```
 
 Verify the paths expected by the configs:
 
 ```bash
 test -d ../rag_assets/base_models/reranker/bge-reranker-v2-m3
-test -d ../rag_assets/base_models/generator/Meta-Llama-3.1-8B-Instruct
+test -d ../rag_assets/base_models/generator/Mistral-Nemo-Instruct-2407
 ```
 
 ## 4. Install GPU Environment
@@ -338,4 +344,4 @@ python -m pytest -q
 
 - Hugging Face Hub download guide: https://huggingface.co/docs/huggingface_hub/en/guides/download
 - BGE reranker model: https://huggingface.co/BAAI/bge-reranker-v2-m3
-- Llama 3.1 8B Instruct model: https://huggingface.co/meta-llama/Meta-Llama-3.1-8B-Instruct
+- Mistral-Nemo-Instruct-2407 model: https://huggingface.co/mistralai/Mistral-Nemo-Instruct-2407

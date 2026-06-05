@@ -1,6 +1,6 @@
 """大模型 generator + auditor（开发文档 §5.5）。
 
-封装 Meta-Llama-3.1-8B-Instruct：基于证据合约生成答案并审计，输出 LargeAudit。
+封装 mistralai/Mistral-Nemo-Instruct-2407：基于证据合约生成答案并审计，输出 LargeAudit。
 默认 bf16（与 run_train.py 对齐，H20 显存充足）；use_4bit=True 时走 nf4 量化。
 JSON 解析失败最多重试 json_retry 次，仍失败则给 fallback audit、json_valid=False。
 torch / transformers / peft 延迟导入。
@@ -35,7 +35,7 @@ class LargeGeneratorAuditor:
         self.json_retry = json_retry
 
         self.tokenizer = AutoTokenizer.from_pretrained(
-            base_path, use_fast=False, local_files_only=True)
+            base_path, local_files_only=True)
         self.tokenizer.pad_token = self.tokenizer.eos_token
         self.tokenizer.pad_token_id = self.tokenizer.eos_token_id
         self.tokenizer.padding_side = "left"
