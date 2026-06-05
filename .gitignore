@@ -1,0 +1,23 @@
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Local environments and OS files
+.env
+.venv/
+venv/
+.DS_Store
+
+# Keep the GitHub repo code-only. Data, models, adapters, checkpoints and
+# generated outputs live in ../rag_assets during local development.
+data/
+data_v*/
+model/
+outputs/
+outputs*/
+checkpoints/
+rag_assets/
+*.zip

@@ -1,0 +1,184 @@
+"""分解 reward 与责任归因（开发文档 §5.8、§7）。
+
+把原来的 answer-only reward 拆成答案/证据/引用/校准/成本五项，并按
+answer_match × support_rule_passed 的四象限，构造大小模型各自的训练 target。
+核心原则：答案对错不再是唯一信号，证据是否真正支持答案成为独立监督信号。
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+
+from .schemas import (
+    Answerability,
+    EvidenceContract,
+    FailureType,
+    LargeAudit,
+    RagSample,
+    RetrievalAction,
+    RewardBreakdown,
+    RuleVerification,
+    SupportLevel,
+)
+from .text_utils import exact_presence
+
+
+@dataclass
+class RewardWeights:
+    """对应 configs/evoco_popqa.yaml 的 reward 段。"""
+    answer_weight: float = 1.0
+    support_weight: float = 1.0
+    citation_weight: float = 1.0
+    calibration_weight: float = 0.2
+    selected_doc_cost: float = 0.05
+    retrieval_round_cost: float = 0.1
+
+
+def _predicted_confidence_bucket(contract: EvidenceContract) -> str:
+    """把小模型的置信度粗分为 high / medium / low，用于校准奖励。"""
+    if contract.answerability == Answerability.HIGH:
+        return "high"
+    if contract.answerability == Answerability.LOW:
+        return "low"
+    # answerability=medium 时，看 top 证据的相关性置信度
+    if contract.selected_evidence:
+        top_conf = max(e.relevance_confidence for e in contract.selected_evidence)
+        if top_conf >= 0.75:
+            return "high"
+        if top_conf <= 0.35:
+            return "low"
+    return "medium"
+
+
+def compute_decomposed_reward(
+    sample: RagSample,
+    contract: EvidenceContract,
+    audit: LargeAudit,
+    verification: RuleVerification,
+    weights: RewardWeights | None = None,
+) -> RewardBreakdown:
+    w = weights or RewardWeights()
+
+    answer_reward = w.answer_weight * (1.0 if verification.answer_match else 0.0)
+
+    support_reward = w.support_weight * (
+        1.0
+        if (verification.support_rule_passed and audit.support_level == SupportLevel.FULLY)
+        else 0.0
+    )
+
+    citation_reward = w.citation_weight * (
+        1.0 if verification.cited_doc_contains_answer else 0.0
+    )
+
+    # 校准奖励：high 置信度应对应命中、low 置信度应对应未命中。
+    bucket = _predicted_confidence_bucket(contract)
+    if bucket == "medium":
+        calibration_reward = 0.0
+    else:
+        aligned = (bucket == "high" and verification.answer_match) or (
+            bucket == "low" and not verification.answer_match
+        )
+        calibration_reward = w.calibration_weight * (1.0 if aligned else -1.0)
+
+    num_selected = contract.cost.get("num_selected_docs", len(contract.selected_evidence))
+    num_rounds = contract.cost.get("num_retrieval_rounds", 1)
+    cost_penalty = w.selected_doc_cost * num_selected + w.retrieval_round_cost * num_rounds
+
+    total = answer_reward + support_reward + citation_reward + calibration_reward - cost_penalty
+
+    return RewardBreakdown(
+        answer_reward=round(answer_reward, 4),
+        support_reward=round(support_reward, 4),
+        citation_reward=round(citation_reward, 4),
+        calibration_reward=round(calibration_reward, 4),
+        cost_penalty=round(cost_penalty, 4),
+        total_reward=round(total, 4),
+    )
+
+
+def _docs_containing_answer(sample: RagSample, doc_ids: list[int]) -> list[int]:
+    out = []
+    for did in doc_ids:
+        doc = sample.doc_by_id(did)
+        text = (doc.get("text") or doc.get("raw") or "") if doc else ""
+        if exact_presence(sample.answers, text):
+            out.append(did)
+    return out
+
+
+def build_training_targets(
+    sample: RagSample,
+    contract: EvidenceContract,
+    audit: LargeAudit,
+    verification: RuleVerification,
+    reward: RewardBreakdown,
+    trust_threshold: float = 0.5,
+) -> dict:
+    """按四象限构造大小模型训练 target（开发文档 §5.8 责任归因表）。
+
+    | answer | support | 小模型               | 大模型                |
+    |--------|---------|----------------------|-----------------------|
+    | T      | T       | 正:含答案选中文档    | SFT/GRPO 正样本       |
+    | T      | F       | 不奖励（positive 空）| 训练引用忠实性        |
+    | F      | T       | 正:含答案选中文档    | 低 reward / SFT 修正  |
+    | F      | F       | 负:选中文档作负样本  | 低权重或丢弃          |
+    """
+    answer_match = verification.answer_match
+    support = verification.support_rule_passed
+
+    selected_ids = contract.selected_doc_ids()
+    candidate_ids = contract.candidate_doc_ids()
+
+    small_positive_doc_ids: list[int] = []
+    small_negative_doc_ids: list[int] = []
+    failure_type = audit.failure_type
+
+    if support:
+        # 检索/重排成功：奖励真正含答案的选中文档，未含答案的候选作负样本。
+        small_positive_doc_ids = _docs_containing_answer(sample, selected_ids)
+        small_negative_doc_ids = [
+            did for did in candidate_ids
+            if did not in small_positive_doc_ids
+            and not exact_presence(
+                sample.answers,
+                (sample.doc_by_id(did) or {}).get("text")
+                or (sample.doc_by_id(did) or {}).get("raw")
+                or "",
+            )
+        ]
+        if not answer_match:
+            # 证据对但答案错 → 生成错误
+            failure_type = FailureType.GENERATION_ERROR
+    else:
+        # 检索未命中：不给小模型正反馈；选中文档作负样本，触发 retrieve_more。
+        small_positive_doc_ids = []
+        small_negative_doc_ids = list(selected_ids)
+        if answer_match:
+            # 答案对但证据不支持 → 大模型凭参数知识答对，标记 unsupported_answer
+            failure_type = FailureType.UNSUPPORTED_ANSWER
+
+    # 小模型动作 target
+    if support and answer_match:
+        small_action_target = RetrievalAction.ANSWER_NOW
+    elif not support:
+        small_action_target = RetrievalAction.RETRIEVE_MORE
+    else:
+        small_action_target = audit.suggested_action
+
+    # 大模型是否进入 SFT 高质量样本池：答案对 + 证据支持 + 审计可信。
+    large_sft_eligible = bool(
+        answer_match
+        and support
+        and verification.json_valid
+        and verification.audit_trust_weight >= trust_threshold
+    )
+
+    return {
+        "small_positive_doc_ids": small_positive_doc_ids,
+        "small_negative_doc_ids": small_negative_doc_ids,
+        "small_action_target": small_action_target,
+        "large_sft_eligible": large_sft_eligible,
+        "large_grpo_reward": reward.total_reward,
+        "failure_type": failure_type,
+    }

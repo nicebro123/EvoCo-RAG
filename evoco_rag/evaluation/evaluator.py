@@ -1,0 +1,59 @@
+"""评估器（开发文档 §7、§9.4）。
+
+两种用法：
+  - evaluate(round_id): 离线读取该轮 replay，计算 §7.1 全部指标（无需模型）。
+  - run_inference(test_samples): 用当前小/大模型在测试集上跑一遍（gold 不进 prompt），
+    生成审计经验再算指标。需要模型，torch 在调用时才用到。
+"""
+
+from __future__ import annotations
+
+import json
+import os
+
+from .metrics import compute_metrics
+from ..replay_buffer import ReplayBuffer
+
+
+class Evaluator:
+    def __init__(self, config, small_policy=None, large_auditor=None):
+        self.cfg = config
+        self.small = small_policy
+        self.large = large_auditor
+        self.replay = ReplayBuffer(root=os.path.join(config.output_dir, "replay"))
+
+    def evaluate(self, round_id: int) -> dict:
+        exps = self.replay.read(round_id)
+        metrics = compute_metrics(exps)
+        out_dir = os.path.join(self.cfg.output_dir, "metrics")
+        os.makedirs(out_dir, exist_ok=True)
+        with open(os.path.join(out_dir, f"eval_round_{round_id:03d}.json"),
+                  "w", encoding="utf-8") as f:
+            json.dump(metrics, f, ensure_ascii=False, indent=2)
+        return metrics
+
+    def run_inference(self, test_samples, round_id: int = 0) -> dict:
+        """测试集推理：gold answers 不可见（show_gold=False）。"""
+        from ..verifier import verify
+        from ..rewards import build_training_targets, compute_decomposed_reward
+        from ..schemas import ReplayExperience
+
+        records = []
+        for sample in test_samples:
+            contract = self.small.build_contract(
+                sample, round_id=round_id, top_k=self.cfg.contract.top_k,
+                high_conf_threshold=self.cfg.contract.high_conf_threshold,
+                answer_now_margin=self.cfg.contract.answer_now_margin,
+                max_selected_docs=self.cfg.contract.max_selected_docs)
+            audit, json_valid = self.large.generate_audit(
+                sample, contract, show_gold=False, round_id=round_id)
+            v = verify(sample, contract, audit, json_valid=json_valid)
+            r = compute_decomposed_reward(sample, contract, audit, v, self.cfg.reward)
+            t = build_training_targets(sample, contract, audit, v, r)
+            records.append(ReplayExperience(
+                sample_id=sample.sample_id, round=round_id,
+                question=sample.question, answers=sample.answers,
+                documents=sample.documents, contract=contract.to_dict(),
+                audit=audit.to_dict(), verification=v.to_dict(),
+                rewards=r.to_dict(), training_targets=t))
+        return compute_metrics(records)

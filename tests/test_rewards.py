@@ -1,0 +1,72 @@
+"""四类责任归因测试（开发文档 §11.2）。
+
+doc0 含答案 'politician'，doc1 不含。通过控制：
+  - selected_evidence 是否含 doc0  → 决定 support_rule_passed
+  - final_answer 是否为 'politician' → 决定 answer_match
+覆盖 (answer, support) 的四个象限。
+"""
+
+from conftest import make_audit, make_contract, make_sample
+
+from evoco_rag.rewards import build_training_targets, compute_decomposed_reward
+from evoco_rag.schemas import FailureType
+from evoco_rag.verifier import verify
+
+
+def _pipeline(selected_ids, final_answer):
+    sample = make_sample()
+    contract = make_contract(selected_doc_ids=selected_ids)
+    audit = make_audit(final_answer=final_answer, used_doc_ids=selected_ids)
+    verification = verify(sample, contract, audit, json_valid=True)
+    reward = compute_decomposed_reward(sample, contract, audit, verification)
+    targets = build_training_targets(sample, contract, audit, verification, reward)
+    return verification, reward, targets
+
+
+def test_answer_true_support_true():
+    v, r, t = _pipeline(selected_ids=[0], final_answer="politician")
+    assert v.answer_match is True
+    assert v.support_rule_passed is True
+    assert 0 in t["small_positive_doc_ids"]
+    assert t["large_sft_eligible"] is True
+    assert r.answer_reward == 1.0 and r.support_reward == 1.0
+
+
+def test_answer_true_support_false():
+    # 答案对，但选中证据(doc1)不含答案 → 大模型凭参数知识答对
+    v, r, t = _pipeline(selected_ids=[1], final_answer="politician")
+    assert v.answer_match is True
+    assert v.support_rule_passed is False
+    # 关键断言：不能给小模型 positive doc
+    assert t["small_positive_doc_ids"] == []
+    assert t["failure_type"] == FailureType.UNSUPPORTED_ANSWER
+    assert t["large_sft_eligible"] is False
+    assert r.support_reward == 0.0
+
+
+def test_answer_false_support_true():
+    # 选中证据(doc0)含答案，但生成答错 → 奖励小模型，归因 generation_error
+    v, r, t = _pipeline(selected_ids=[0], final_answer="banker")
+    assert v.answer_match is False
+    assert v.support_rule_passed is True
+    # 关键断言：可以给小模型 positive doc
+    assert 0 in t["small_positive_doc_ids"]
+    assert t["failure_type"] == FailureType.GENERATION_ERROR
+    # 大模型 reward 较低（answer_reward=0）
+    assert r.answer_reward == 0.0
+    assert t["large_sft_eligible"] is False
+
+
+def test_answer_false_support_false():
+    v, r, t = _pipeline(selected_ids=[1], final_answer="banker")
+    assert v.answer_match is False
+    assert v.support_rule_passed is False
+    assert t["small_positive_doc_ids"] == []
+    assert 1 in t["small_negative_doc_ids"]
+    assert t["small_action_target"] == "retrieve_more"
+
+
+def test_cost_penalty_grows_with_selected_docs():
+    _, r1, _ = _pipeline(selected_ids=[0], final_answer="politician")
+    _, r2, _ = _pipeline(selected_ids=[0, 1], final_answer="politician")
+    assert r2.cost_penalty > r1.cost_penalty
