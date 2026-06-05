@@ -1,7 +1,7 @@
 """测试集评估入口（开发文档 §7、§9.4）。
 
 gold answers 不进入大模型 prompt，只用于离线指标。需要 GPU + 模型权重。
-    python scripts/eval_evoco.py --config configs/evoco_popqa.yaml \
+    CUDA_VISIBLE_DEVICES=0,1,2,3 python scripts/eval_evoco.py --config configs/evoco_popqa.yaml \
         --small_lora ../rag_assets/checkpoints/evoco_popqa/small/round_002 \
         --large_lora ../rag_assets/checkpoints/evoco_popqa/large/round_002
 """

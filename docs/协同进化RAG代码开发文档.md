@@ -1216,4 +1216,4 @@ Audited reranker training
 
 - 本机 CPU 已验证：schema 校验、四象限归因、verifier、replay、JSON 解析、权重路径解析、指标、seed replay 实跑、完整 no-model 消融跑批。
 - 待 H20 验证：reranker/LLM 加载、bf16 训练、真实审计 JSON 成功率、双 LoRA 多轮协同进化收敛。
-  入口：`python scripts/train_evoco.py --config configs/debug.yaml`（先 16 条），通过后切 `configs/evoco_popqa.yaml`。
+  入口：`CUDA_VISIBLE_DEVICES=0,1,2,3 python scripts/train_evoco.py --config configs/debug.yaml`（先 16 条），通过后切 `configs/evoco_popqa.yaml`。

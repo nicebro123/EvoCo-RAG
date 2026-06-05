@@ -6,7 +6,7 @@
 每个实验单独加载模型和 LoRA，避免不同消融实验互相污染 adapter 状态。
 
 用法（H20）:
-    python scripts/run_ablations.py --config configs/evoco_popqa.yaml
+    CUDA_VISIBLE_DEVICES=0,1,2,3 python scripts/run_ablations.py --config configs/evoco_popqa.yaml
 快速逻辑校验（无 GPU，纯启发式、不训练、不审计）:
     python scripts/run_ablations.py --config configs/debug.yaml --no_models
 """

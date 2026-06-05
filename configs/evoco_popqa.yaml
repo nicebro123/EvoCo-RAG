@@ -14,7 +14,7 @@ models:
   large_base_path: ../rag_assets/base_models/generator/Mistral-Nemo-Instruct-2407
   small_lora_dir: ../rag_assets/checkpoints/evoco_popqa/small
   large_lora_dir: ../rag_assets/checkpoints/evoco_popqa/large
-  use_4bit: false          # 默认 bf16（2x H20 显存充足）
+  use_4bit: false          # 默认 bf16；推荐用 CUDA_VISIBLE_DEVICES=0,1,2,3 暴露 4 张卡
 
 contract:
   top_k: 3

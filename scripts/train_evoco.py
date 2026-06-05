@@ -2,7 +2,7 @@
 
 只负责 CLI 与 trainer 调用，训练逻辑都在 CoevolutionTrainer。需要 GPU + 模型权重，
 在 H20 机器上运行：
-    python scripts/train_evoco.py --config configs/evoco_popqa.yaml
+    CUDA_VISIBLE_DEVICES=0,1,2,3 python scripts/train_evoco.py --config configs/evoco_popqa.yaml
 """
 
 import argparse

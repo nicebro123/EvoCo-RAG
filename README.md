@@ -177,7 +177,8 @@ print("cuda runtime:", torch.version.cuda)
 print("cuda available:", torch.cuda.is_available())
 print("gpu count:", torch.cuda.device_count())
 if torch.cuda.is_available():
-    print("gpu:", torch.cuda.get_device_name(0))
+    for i in range(torch.cuda.device_count()):
+        print(f"gpu {i}:", torch.cuda.get_device_name(i))
 PY
 ```
 
@@ -204,20 +205,26 @@ Start with the debug configuration. It uses 16 training samples and writes to
 `../rag_assets/outputs_debug/latest`.
 
 ```bash
-python scripts/train_evoco.py --config configs/debug.yaml
+CUDA_VISIBLE_DEVICES=0,1,2,3 python scripts/train_evoco.py --config configs/debug.yaml
 ```
 
 Run the full PopQA configuration:
 
 ```bash
-python scripts/train_evoco.py --config configs/evoco_popqa.yaml
+CUDA_VISIBLE_DEVICES=0,1,2,3 python scripts/train_evoco.py --config configs/evoco_popqa.yaml
 ```
 
 Resume from the latest completed round:
 
 ```bash
-python scripts/train_evoco.py --config configs/evoco_popqa.yaml --resume
+CUDA_VISIBLE_DEVICES=0,1,2,3 python scripts/train_evoco.py --config configs/evoco_popqa.yaml --resume
 ```
+
+`CUDA_VISIBLE_DEVICES=0,1,2,3` exposes four physical GPUs to PyTorch. The large
+generator uses `device_map="auto"` and can shard across the visible GPUs; the
+small reranker uses logical `cuda:0`, which maps to the first visible GPU.
+Change the list if you want a different subset, for example
+`CUDA_VISIBLE_DEVICES=2,3`.
 
 Important: fresh training refuses to overwrite existing `round_*` adapters. For
 a new experiment, edit these fields in the YAML:
@@ -235,13 +242,13 @@ models:
 Evaluate with the latest checkpoint roots from the config:
 
 ```bash
-python scripts/eval_evoco.py --config configs/evoco_popqa.yaml
+CUDA_VISIBLE_DEVICES=0,1,2,3 python scripts/eval_evoco.py --config configs/evoco_popqa.yaml
 ```
 
 Evaluate explicit adapter rounds:
 
 ```bash
-python scripts/eval_evoco.py \
+CUDA_VISIBLE_DEVICES=0,1,2,3 python scripts/eval_evoco.py \
   --config configs/evoco_popqa.yaml \
   --small_lora ../rag_assets/checkpoints/evoco_popqa/small/round_002 \
   --large_lora ../rag_assets/checkpoints/evoco_popqa/large/round_002
