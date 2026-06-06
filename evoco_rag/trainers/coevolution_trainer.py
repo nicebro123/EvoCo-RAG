@@ -66,10 +66,11 @@ class CoevolutionTrainer:
         round_id: int,
         done: int,
         total: int,
+        generated: int,
         started_at: float,
     ) -> None:
         elapsed = time.time() - started_at
-        rate = done / elapsed if elapsed > 0 else 0.0
+        rate = generated / elapsed if elapsed > 0 else 0.0
         remaining = max(0, total - done)
         eta = (remaining / rate) if rate > 0 else 0.0
         print(
@@ -78,6 +79,43 @@ class CoevolutionTrainer:
             f"rate={rate:.2f}/s eta={self._format_seconds(eta)}",
             flush=True,
         )
+
+    def _valid_partial_experiences(self, round_id: int, sample_ids: set[str]) -> list[ReplayExperience]:
+        existing = []
+        seen = set()
+        skipped = 0
+        path = self.replay.round_path(round_id)
+        if not os.path.exists(path):
+            return existing
+        with open(path, "r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    exp = ReplayExperience.from_dict(json.loads(line))
+                except (json.JSONDecodeError, TypeError, ValueError):
+                    skipped += 1
+                    continue
+                if exp.sample_id in sample_ids and exp.sample_id not in seen:
+                    existing.append(exp)
+                    seen.add(exp.sample_id)
+        if skipped:
+            print(
+                f"round {round_id}: skipped {skipped} invalid partial replay lines",
+                flush=True,
+            )
+        return existing
+
+    def _rewrite_round_artifacts(self, round_id: int, experiences: list[ReplayExperience]) -> None:
+        replay_path = self.replay.round_path(round_id)
+        contracts_path = os.path.join(
+            self.cfg.output_dir, "contracts", f"round_{round_id:03d}.jsonl")
+        audits_path = os.path.join(
+            self.cfg.output_dir, "audits", f"round_{round_id:03d}.jsonl")
+        self._write_jsonl(replay_path, [e.to_dict() for e in experiences])
+        self._write_jsonl(contracts_path, [e.contract for e in experiences])
+        self._write_jsonl(audits_path, [e.audit for e in experiences])
 
     # --------------------------------------------------- 单样本经验生成
     def make_experience(self, sample, round_id: int) -> ReplayExperience:
@@ -141,7 +179,9 @@ class CoevolutionTrainer:
 
     # --------------------------------------------------------- 一整轮
     def run_round(self, samples, round_id: int) -> dict:
+        round_started = time.time()
         total = len(samples)
+        sample_ids = {s.sample_id for s in samples}
         replay_path = self.replay.round_path(round_id)
         contracts_path = os.path.join(
             self.cfg.output_dir, "contracts", f"round_{round_id:03d}.jsonl")
@@ -150,37 +190,73 @@ class CoevolutionTrainer:
         for path in (replay_path, contracts_path, audits_path):
             os.makedirs(os.path.dirname(path), exist_ok=True)
 
-        print(f"round {round_id}: generating experiences for {total} samples", flush=True)
-        started_at = time.time()
+        existing = self._valid_partial_experiences(round_id, sample_ids)
+        done_ids = {e.sample_id for e in existing}
+        if existing:
+            self._rewrite_round_artifacts(round_id, existing)
+            self.replay.rebuild_all()
+            print(
+                f"round {round_id}: resumed {len(existing)}/{total} existing experiences",
+                flush=True,
+            )
+        pending = [sample for sample in samples if sample.sample_id not in done_ids]
+
+        print(
+            f"round {round_id}: generating {len(pending)} remaining experiences "
+            f"for {total} samples",
+            flush=True,
+        )
+        generation_started = time.time()
         progress_interval = self._progress_interval()
         flush_interval = self._replay_flush_interval()
-        n = 0
-        with open(replay_path, "w", encoding="utf-8") as fr, \
-                open(contracts_path, "w", encoding="utf-8") as fc, \
-                open(audits_path, "w", encoding="utf-8") as fa:
-            for idx, sample in enumerate(samples, start=1):
-                exp = self.make_experience(sample, round_id)
-                self._write_jsonl_record(fr, exp.to_dict())
-                self._write_jsonl_record(fc, exp.contract)
-                self._write_jsonl_record(fa, exp.audit)
-                n += 1
+        n = len(existing)
+        if pending:
+            mode = "a" if existing else "w"
+            with open(replay_path, mode, encoding="utf-8") as fr, \
+                    open(contracts_path, mode, encoding="utf-8") as fc, \
+                    open(audits_path, mode, encoding="utf-8") as fa:
+                for idx, sample in enumerate(pending, start=len(existing) + 1):
+                    exp = self.make_experience(sample, round_id)
+                    self._write_jsonl_record(fr, exp.to_dict())
+                    self._write_jsonl_record(fc, exp.contract)
+                    self._write_jsonl_record(fa, exp.audit)
+                    n += 1
 
-                if flush_interval and (idx % flush_interval == 0):
-                    fr.flush()
-                    fc.flush()
-                    fa.flush()
-                if progress_interval and (idx % progress_interval == 0 or idx == total):
-                    self._log_experience_progress(round_id, idx, total, started_at)
+                    if flush_interval and (idx % flush_interval == 0):
+                        fr.flush()
+                        fc.flush()
+                        fa.flush()
+                    if progress_interval and (idx % progress_interval == 0 or idx == total):
+                        generated = idx - len(existing)
+                        self._log_experience_progress(
+                            round_id, idx, total, generated, generation_started)
+        elif not existing:
+            with open(replay_path, "w", encoding="utf-8"):
+                pass
+            with open(contracts_path, "w", encoding="utf-8"):
+                pass
+            with open(audits_path, "w", encoding="utf-8"):
+                pass
 
         self.replay.rebuild_all()
+        generation_seconds = time.time() - generation_started
         print(
             f"round {round_id}: wrote {n} experiences -> {replay_path}",
             flush=True,
         )
 
-        stats = {"round": round_id, "num_experiences": n}
+        stats = {
+            "round": round_id,
+            "num_experiences": n,
+            "resumed_experiences": len(existing),
+            "generated_experiences": len(pending),
+            "timing": {
+                "experience_generation_seconds": round(generation_seconds, 4),
+            },
+        }
 
         # 训练小模型
+        small_started = time.time()
         if self.cfg.ablation.train_small_lora and self.small_trainer is not None:
             exps = self.replay.read(round_id)
             exps = self.replay.downsample_noisy(exps)
@@ -190,8 +266,15 @@ class CoevolutionTrainer:
             os.makedirs(small_dir, exist_ok=True)
             self.small_trainer.save(small_dir)
             stats["small_checkpoint"] = small_dir
+        stats["timing"]["small_training_seconds"] = round(time.time() - small_started, 4)
+        print(
+            f"round {round_id}: small training "
+            f"{self._format_seconds(stats['timing']['small_training_seconds'])}",
+            flush=True,
+        )
 
         # 训练大模型
+        large_started = time.time()
         if self.cfg.ablation.train_large_lora and self.large_trainer is not None:
             exps = self.replay.read(round_id)
             sft = self.replay.sample_large_sft(exps)
@@ -200,10 +283,25 @@ class CoevolutionTrainer:
             os.makedirs(large_dir, exist_ok=True)
             self.large_trainer.save(large_dir)
             stats["large_checkpoint"] = large_dir
+        stats["timing"]["large_training_seconds"] = round(time.time() - large_started, 4)
+        print(
+            f"round {round_id}: large training "
+            f"{self._format_seconds(stats['timing']['large_training_seconds'])}",
+            flush=True,
+        )
 
         # 评估
+        eval_started = time.time()
         if self.evaluator is not None:
             stats["eval"] = self.evaluator.evaluate(round_id)
+        stats["timing"]["evaluation_seconds"] = round(time.time() - eval_started, 4)
+        stats["timing"]["total_round_seconds"] = round(time.time() - round_started, 4)
+        print(
+            f"round {round_id}: evaluation "
+            f"{self._format_seconds(stats['timing']['evaluation_seconds'])}; "
+            f"total {self._format_seconds(stats['timing']['total_round_seconds'])}",
+            flush=True,
+        )
 
         with open(os.path.join(self.cfg.output_dir, "metrics", f"round_{round_id:03d}.json"),
                   "w", encoding="utf-8") as f:

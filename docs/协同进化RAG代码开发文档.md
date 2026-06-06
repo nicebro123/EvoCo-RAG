@@ -852,6 +852,24 @@ CUDA_VISIBLE_DEVICES=2,3 python scripts/train_evoco.py --config configs/evoco_po
 `round 0: experience 500/12868 elapsed=... rate=... eta=...` 形式的进度。
 如果完整训练看起来很久没有结束，先检查进度日志和 replay 文件行数。
 
+如果训练进程在 experience generation 阶段中断，重新执行同一条训练命令时会读取
+已有 `replay/round_xxx.jsonl` 中合法的样本行，跳过已经完成的 `sample_id`，并重建
+`contracts/round_xxx.jsonl` 与 `audits/round_xxx.jsonl`。损坏或半截 JSON 行会被跳过。
+这属于同一 round 内的 partial resume；`train_evoco.py --resume` 则用于已经完成
+`round_*` checkpoint 后从下一轮继续。
+
+每轮 `metrics/round_xxx.json` 会记录阶段耗时：
+
+```json
+"timing": {
+  "experience_generation_seconds": 123.4,
+  "small_training_seconds": 12.3,
+  "large_training_seconds": 45.6,
+  "evaluation_seconds": 1.2,
+  "total_round_seconds": 182.5
+}
+```
+
 ## 9. 大小模型权重与 checkpoint 布局
 
 权重文件必须分为三类，不能混用：

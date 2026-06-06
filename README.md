@@ -228,6 +228,12 @@ Resume from the latest completed round:
 CUDA_VISIBLE_DEVICES=2,3 python scripts/train_evoco.py --config configs/evoco_popqa.yaml --resume
 ```
 
+`--resume` continues from the latest completed checkpoint round. If a process is
+interrupted during experience generation before checkpointing, rerun the same
+command without deleting the output directory; the trainer will reuse valid
+partial `replay/round_xxx.jsonl` rows, skip already completed sample IDs, and
+generate only the remaining samples.
+
 `CUDA_VISIBLE_DEVICES=2,3` exposes physical GPUs 2 and 3 to PyTorch. The large
 generator uses `device_map="auto"` and can shard across the visible GPUs; the
 small reranker uses logical `cuda:0`, which maps to the first visible GPU.
@@ -265,6 +271,18 @@ line count before assuming the job is stuck:
 
 ```bash
 wc -l ../rag_assets/outputs/evoco_popqa_policy/replay/round_000.jsonl
+```
+
+Each round also records stage timing in `metrics/round_xxx.json`:
+
+```json
+"timing": {
+  "experience_generation_seconds": 123.4,
+  "small_training_seconds": 12.3,
+  "large_training_seconds": 45.6,
+  "evaluation_seconds": 1.2,
+  "total_round_seconds": 182.5
+}
 ```
 
 Important: fresh training refuses to overwrite existing `round_*` adapters. For
