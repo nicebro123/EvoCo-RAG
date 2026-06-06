@@ -41,6 +41,8 @@ class RuntimeConfig:
     audit_temperature: float = 0.7
     max_prompt_length: int = 3072
     max_completion_length: int = 1024
+    progress_interval: int = 50
+    replay_flush_interval: int = 10
 
 
 @dataclass

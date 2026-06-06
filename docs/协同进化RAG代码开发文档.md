@@ -836,7 +836,21 @@ runtime:
   audit_temperature: 0.7
   max_prompt_length: 3072
   max_completion_length: 1024
+  progress_interval: 50
+  replay_flush_interval: 10
 ```
+
+完整 PopQA 首轮包含上万条样本，并且每条样本会触发大模型审计生成。推荐先使用
+`configs/evoco_popqa_fast.yaml` 做 512 条样本、单审计候选、单 round 的快速验证：
+
+```bash
+CUDA_VISIBLE_DEVICES=2,3 python scripts/train_evoco.py --config configs/evoco_popqa_fast.yaml
+```
+
+训练主循环会边生成边写入 `replay/round_000.jsonl`、`contracts/round_000.jsonl`
+和 `audits/round_000.jsonl`，并按 `runtime.progress_interval` 打印
+`round 0: experience 500/12868 elapsed=... rate=... eta=...` 形式的进度。
+如果完整训练看起来很久没有结束，先检查进度日志和 replay 文件行数。
 
 ## 9. 大小模型权重与 checkpoint 布局
 
@@ -1187,7 +1201,7 @@ Audited reranker training
 | `evoco_rag/large_model.py` | §5.5 | 完成：bf16 默认、4bit 可选、JSON 重试；torch 延迟导入 |
 | `evoco_rag/trainers/small_trainer.py` | §5.10、§10.3 | 完成：文档级 ranking LoRA 训练 |
 | `evoco_rag/trainers/large_trainer.py` | §5.11、§10.1/§10.2 | 完成：SFT + GRPO reward 函数，reward 无文件副作用 |
-| `evoco_rag/trainers/coevolution_trainer.py` | §5.12 | 完成：单轮/多轮调度、消融开关、contracts/audits/replay/metrics/checkpoint |
+| `evoco_rag/trainers/coevolution_trainer.py` | §5.12 | 完成：单轮/多轮调度、消融开关、流式 contracts/audits/replay 写入、进度日志、metrics/checkpoint |
 | `evoco_rag/evaluation/metrics.py` | §7.1 | 完成：答案、检索、证据、成本、校准指标 |
 | `evoco_rag/evaluation/evaluator.py` | §7、§10.4 | 完成：离线 evaluate + 测试集 run_inference，测试不见 gold |
 | `scripts/build_seed_replay.py` | §6 阶段1 | 完成：纯 CPU 生成 seed replay + contracts/audits/manifest |
@@ -1216,7 +1230,7 @@ Audited reranker training
 
 - 本机 CPU 已验证：schema 校验、四象限归因、verifier、replay、JSON 解析、权重路径解析、指标、seed replay 实跑、完整 no-model 消融跑批。
 - 待 H20 验证：reranker/LLM 加载、bf16 训练、真实审计 JSON 成功率、双 LoRA 多轮协同进化收敛。
-  入口：`CUDA_VISIBLE_DEVICES=2,3 python scripts/train_evoco.py --config configs/debug.yaml`（先 16 条），通过后切 `configs/evoco_popqa.yaml`。
+  入口：`CUDA_VISIBLE_DEVICES=2,3 python scripts/train_evoco.py --config configs/debug.yaml`（先 16 条），通过后切 `configs/evoco_popqa_fast.yaml`（512 条快速验证），最后再切 `configs/evoco_popqa.yaml` 或 `configs/evoco_popqa_policy.yaml`。
 
 ## 18. 论文创新 TODO 对应的代码开发 TODO
 

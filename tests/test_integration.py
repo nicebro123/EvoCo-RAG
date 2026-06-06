@@ -44,3 +44,28 @@ def test_run_multiple_rounds(tmp_path):
     all_stats = trainer.run([make_sample()])
     assert len(all_stats) == 2
     assert {s["round"] for s in all_stats} == {0, 1}
+
+
+def test_run_round_streams_outputs_and_progress(tmp_path, capsys):
+    cfg = EvoCoConfig()
+    cfg.output_dir = str(tmp_path / "out")
+    cfg.ablation.use_evidence_audit = False
+    cfg.ablation.train_small_lora = False
+    cfg.ablation.train_large_lora = False
+    cfg.runtime.progress_interval = 1
+    cfg.runtime.replay_flush_interval = 1
+
+    trainer = CoevolutionTrainer(cfg, None, None)
+    stats = trainer.run_round([make_sample(), make_sample()], round_id=0)
+
+    captured = capsys.readouterr().out
+    assert "round 0: experience 1/2" in captured
+    assert "round 0: wrote 2 experiences" in captured
+    assert stats["num_experiences"] == 2
+
+    replay_path = tmp_path / "out" / "replay" / "round_000.jsonl"
+    contracts_path = tmp_path / "out" / "contracts" / "round_000.jsonl"
+    audits_path = tmp_path / "out" / "audits" / "round_000.jsonl"
+    assert sum(1 for _ in replay_path.open(encoding="utf-8")) == 2
+    assert sum(1 for _ in contracts_path.open(encoding="utf-8")) == 2
+    assert sum(1 for _ in audits_path.open(encoding="utf-8")) == 2

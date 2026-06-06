@@ -30,6 +30,8 @@ runtime:
   audit_temperature: 0.7
   max_prompt_length: 3072
   max_completion_length: 1024
+  progress_interval: 50
+  replay_flush_interval: 10
 
 small_policy:
   use_policy_heads: true

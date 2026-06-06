@@ -208,7 +208,15 @@ Start with the debug configuration. It uses 16 training samples and writes to
 CUDA_VISIBLE_DEVICES=2,3 python scripts/train_evoco.py --config configs/debug.yaml
 ```
 
-Run the full PopQA configuration:
+Then run the fast PopQA policy configuration before launching the full dataset.
+It uses 512 training samples, one audit candidate, shorter prompts, one round,
+and writes to `../rag_assets/outputs/evoco_popqa_fast`.
+
+```bash
+CUDA_VISIBLE_DEVICES=2,3 python scripts/train_evoco.py --config configs/evoco_popqa_fast.yaml
+```
+
+Run the full PopQA configuration only after the fast run finishes normally:
 
 ```bash
 CUDA_VISIBLE_DEVICES=2,3 python scripts/train_evoco.py --config configs/evoco_popqa.yaml
@@ -241,6 +249,23 @@ runtime:
 `candidate_doc_char_limit` increases evidence visibility in the audit prompt.
 `num_audit_candidates` generates multiple answer/audit candidates and selects
 the one with the strongest evidence-consistency score.
+
+Round generation is streamed. During a round, the trainer prints progress like
+`round 0: experience 500/12868 elapsed=... rate=... eta=...`, and incrementally
+writes:
+
+```text
+../rag_assets/outputs*/replay/round_000.jsonl
+../rag_assets/outputs*/contracts/round_000.jsonl
+../rag_assets/outputs*/audits/round_000.jsonl
+```
+
+If a full PopQA round looks slow, check the progress line and the replay file
+line count before assuming the job is stuck:
+
+```bash
+wc -l ../rag_assets/outputs/evoco_popqa_policy/replay/round_000.jsonl
+```
 
 Important: fresh training refuses to overwrite existing `round_*` adapters. For
 a new experiment, edit these fields in the YAML:

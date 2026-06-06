@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import os
+import time
 
 from ..auditor import build_audit_prompt  # noqa: F401  (供大模型 SFT 复用)
 from ..contract import build_contract
@@ -38,6 +39,45 @@ class CoevolutionTrainer:
         with open(path, "w", encoding="utf-8") as f:
             for record in records:
                 f.write(json.dumps(record, ensure_ascii=False) + "\n")
+
+    @staticmethod
+    def _write_jsonl_record(handle, record: dict) -> None:
+        handle.write(json.dumps(record, ensure_ascii=False) + "\n")
+
+    @staticmethod
+    def _format_seconds(seconds: float) -> str:
+        seconds = max(0, int(seconds))
+        h, rem = divmod(seconds, 3600)
+        m, s = divmod(rem, 60)
+        if h:
+            return f"{h:d}h{m:02d}m{s:02d}s"
+        if m:
+            return f"{m:d}m{s:02d}s"
+        return f"{s:d}s"
+
+    def _progress_interval(self) -> int:
+        return max(0, int(getattr(self.cfg.runtime, "progress_interval", 50)))
+
+    def _replay_flush_interval(self) -> int:
+        return max(0, int(getattr(self.cfg.runtime, "replay_flush_interval", 10)))
+
+    def _log_experience_progress(
+        self,
+        round_id: int,
+        done: int,
+        total: int,
+        started_at: float,
+    ) -> None:
+        elapsed = time.time() - started_at
+        rate = done / elapsed if elapsed > 0 else 0.0
+        remaining = max(0, total - done)
+        eta = (remaining / rate) if rate > 0 else 0.0
+        print(
+            f"round {round_id}: experience {done}/{total} "
+            f"elapsed={self._format_seconds(elapsed)} "
+            f"rate={rate:.2f}/s eta={self._format_seconds(eta)}",
+            flush=True,
+        )
 
     # --------------------------------------------------- 单样本经验生成
     def make_experience(self, sample, round_id: int) -> ReplayExperience:
@@ -101,15 +141,41 @@ class CoevolutionTrainer:
 
     # --------------------------------------------------------- 一整轮
     def run_round(self, samples, round_id: int) -> dict:
-        experiences = [self.make_experience(s, round_id) for s in samples]
-        n = self.replay.write(experiences, round_id)
-        self._write_jsonl(
-            os.path.join(self.cfg.output_dir, "contracts", f"round_{round_id:03d}.jsonl"),
-            [e.contract for e in experiences],
-        )
-        self._write_jsonl(
-            os.path.join(self.cfg.output_dir, "audits", f"round_{round_id:03d}.jsonl"),
-            [e.audit for e in experiences],
+        total = len(samples)
+        replay_path = self.replay.round_path(round_id)
+        contracts_path = os.path.join(
+            self.cfg.output_dir, "contracts", f"round_{round_id:03d}.jsonl")
+        audits_path = os.path.join(
+            self.cfg.output_dir, "audits", f"round_{round_id:03d}.jsonl")
+        for path in (replay_path, contracts_path, audits_path):
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+
+        print(f"round {round_id}: generating experiences for {total} samples", flush=True)
+        started_at = time.time()
+        progress_interval = self._progress_interval()
+        flush_interval = self._replay_flush_interval()
+        n = 0
+        with open(replay_path, "w", encoding="utf-8") as fr, \
+                open(contracts_path, "w", encoding="utf-8") as fc, \
+                open(audits_path, "w", encoding="utf-8") as fa:
+            for idx, sample in enumerate(samples, start=1):
+                exp = self.make_experience(sample, round_id)
+                self._write_jsonl_record(fr, exp.to_dict())
+                self._write_jsonl_record(fc, exp.contract)
+                self._write_jsonl_record(fa, exp.audit)
+                n += 1
+
+                if flush_interval and (idx % flush_interval == 0):
+                    fr.flush()
+                    fc.flush()
+                    fa.flush()
+                if progress_interval and (idx % progress_interval == 0 or idx == total):
+                    self._log_experience_progress(round_id, idx, total, started_at)
+
+        self.replay.rebuild_all()
+        print(
+            f"round {round_id}: wrote {n} experiences -> {replay_path}",
+            flush=True,
         )
 
         stats = {"round": round_id, "num_experiences": n}
