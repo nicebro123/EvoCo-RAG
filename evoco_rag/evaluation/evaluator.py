@@ -38,8 +38,9 @@ class Evaluator:
         from ..rewards import build_training_targets, compute_decomposed_reward
         from ..schemas import ReplayExperience, RetrievalAction
 
-        records = []
-        for sample in test_samples:
+        samples = list(test_samples)
+        contracts = []
+        for sample in samples:
             contract = self.small.build_contract(
                 sample, round_id=round_id, top_k=self.cfg.contract.top_k,
                 high_conf_threshold=self.cfg.contract.high_conf_threshold,
@@ -49,8 +50,28 @@ class Evaluator:
                 policy_action_min_conf=self.cfg.contract.policy_action_min_conf)
             if not self.cfg.ablation.use_action_policy:
                 contract.retrieval_action = RetrievalAction.ANSWER_NOW
-            audit, json_valid = self.large.generate_audit(
-                sample, contract, show_gold=False, round_id=round_id)
+            contracts.append(contract)
+
+        batch_size = max(1, int(getattr(self.cfg.runtime, "audit_batch_size", 1)))
+        if hasattr(self.large, "generate_audit_batch"):
+            audits = self.large.generate_audit_batch(
+                samples,
+                contracts,
+                show_gold=False,
+                round_id=round_id,
+                batch_size=batch_size,
+            )
+            if len(audits) != len(samples):
+                raise RuntimeError("large auditor returned fewer batch audits than samples")
+        else:
+            audits = [
+                self.large.generate_audit(
+                    sample, contract, show_gold=False, round_id=round_id)
+                for sample, contract in zip(samples, contracts)
+            ]
+
+        records = []
+        for sample, contract, (audit, json_valid) in zip(samples, contracts, audits):
             v = verify(sample, contract, audit, json_valid=json_valid)
             r = compute_decomposed_reward(sample, contract, audit, v, self.cfg.reward)
             t = build_training_targets(sample, contract, audit, v, r)

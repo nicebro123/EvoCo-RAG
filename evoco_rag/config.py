@@ -27,6 +27,7 @@ class ContractConfig:
 class TrainingConfig:
     num_rounds: int = 3
     batch_size: int = 4
+    large_batch_size: int = 2
     num_generations: int = 2
     small_lr: float = 5.0e-5
     large_lr: float = 1.0e-5
@@ -38,6 +39,7 @@ class TrainingConfig:
 class RuntimeConfig:
     candidate_doc_char_limit: int = 1200
     num_audit_candidates: int = 3
+    audit_batch_size: int = 1
     audit_temperature: float = 0.7
     max_prompt_length: int = 3072
     max_completion_length: int = 1024

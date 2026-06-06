@@ -29,6 +29,7 @@ class LargeGeneratorAuditor:
         json_retry: int = 3,
         candidate_doc_char_limit: int = 1200,
         num_audit_candidates: int = 3,
+        audit_batch_size: int = 1,
         audit_temperature: float = 0.7,
     ):
         import torch
@@ -39,6 +40,7 @@ class LargeGeneratorAuditor:
         self.json_retry = json_retry
         self.candidate_doc_char_limit = max(1, int(candidate_doc_char_limit))
         self.num_audit_candidates = max(1, int(num_audit_candidates))
+        self.audit_batch_size = max(1, int(audit_batch_size))
         self.audit_temperature = max(0.0, float(audit_temperature))
 
         self.tokenizer = AutoTokenizer.from_pretrained(
@@ -95,6 +97,41 @@ class LargeGeneratorAuditor:
             )
         gen = out[0][inputs["input_ids"].shape[1]:]
         return self.tokenizer.decode(gen, skip_special_tokens=True)
+
+    def _generate_many(self, messages_batch: list[list[dict]], temperature: float) -> list[str]:
+        if not messages_batch:
+            return []
+        import torch
+
+        old_padding_side = getattr(self.tokenizer, "padding_side", "left")
+        self.tokenizer.padding_side = "left"
+        try:
+            prompts = [
+                self.tokenizer.apply_chat_template(
+                    messages, tokenize=False, add_generation_prompt=True)
+                for messages in messages_batch
+            ]
+            inputs = self.tokenizer(
+                prompts, padding=True, return_tensors="pt", truncation=True,
+                max_length=self.max_prompt_length).to(self.model.device)
+            with torch.no_grad():
+                gen_kwargs = dict(
+                    max_new_tokens=self.max_completion_length,
+                    pad_token_id=self.tokenizer.pad_token_id,
+                )
+                if temperature > 0:
+                    gen_kwargs.update(do_sample=True, temperature=temperature, top_p=0.9)
+                else:
+                    gen_kwargs["do_sample"] = False
+                out = self.model.generate(
+                    **inputs,
+                    **gen_kwargs,
+                )
+            prompt_width = inputs["input_ids"].shape[1]
+            generated = [row[prompt_width:] for row in out]
+            return self.tokenizer.batch_decode(generated, skip_special_tokens=True)
+        finally:
+            self.tokenizer.padding_side = old_padding_side
 
     @staticmethod
     def _quote_supported(sample: RagSample, evidence: dict) -> bool:
@@ -169,52 +206,44 @@ class LargeGeneratorAuditor:
 
         return round(score, 4)
 
-    def generate_audit(
+    def _build_audit_messages(
         self,
         sample: RagSample,
         contract: EvidenceContract,
         show_gold: bool = False,
-        round_id: int = 0,
-    ) -> tuple[LargeAudit, bool]:
-        """生成审计，带 JSON 重试与降级。返回 (LargeAudit, json_valid)。"""
-        messages = build_audit_prompt(
+    ) -> list[dict]:
+        return build_audit_prompt(
             sample,
             contract,
             show_gold=show_gold,
             candidate_doc_char_limit=self.candidate_doc_char_limit,
         )
-        candidates: list[dict] = []
-        total_candidates = self.num_audit_candidates
-        for attempt in range(total_candidates):
-            temperature = 0.0 if attempt == 0 else self.audit_temperature
-            text = self._generate(messages, temperature=temperature)
-            audit, ok = parse_audit(text, sample.sample_id, round_id)
-            score = self.score_audit_candidate(sample, contract, audit, ok)
-            candidates.append({
-                "audit": audit,
-                "json_valid": ok,
-                "score": score,
-                "attempt": attempt,
-                "temperature": temperature,
-                "raw_text": text,
-            })
 
-        extra_retries = max(0, self.json_retry - total_candidates)
-        for retry in range(extra_retries):
-            if any(c["json_valid"] for c in candidates):
-                break
-            text = self._generate(messages, temperature=self.audit_temperature)
-            audit, ok = parse_audit(text, sample.sample_id, round_id)
-            score = self.score_audit_candidate(sample, contract, audit, ok)
-            candidates.append({
-                "audit": audit,
-                "json_valid": ok,
-                "score": score,
-                "attempt": total_candidates + retry,
-                "temperature": self.audit_temperature,
-                "raw_text": text,
-            })
+    def _candidate_from_text(
+        self,
+        sample: RagSample,
+        contract: EvidenceContract,
+        text: str,
+        round_id: int,
+        attempt: int,
+        temperature: float,
+    ) -> dict:
+        audit, ok = parse_audit(text, sample.sample_id, round_id)
+        score = self.score_audit_candidate(sample, contract, audit, ok)
+        return {
+            "audit": audit,
+            "json_valid": ok,
+            "score": score,
+            "attempt": attempt,
+            "temperature": temperature,
+            "raw_text": text,
+        }
 
+    def _select_best_candidate(
+        self,
+        sample: RagSample,
+        candidates: list[dict],
+    ) -> tuple[LargeAudit, bool]:
         best = max(candidates, key=lambda x: (x["score"], x["json_valid"], -x["attempt"]))
 
         answers = [
@@ -263,6 +292,85 @@ class LargeGeneratorAuditor:
             "candidate_summaries": summaries,
         }
         return best_audit, best["json_valid"]
+
+    def generate_audit_batch(
+        self,
+        samples: list[RagSample],
+        contracts: list[EvidenceContract],
+        show_gold: bool = False,
+        round_id: int = 0,
+        batch_size: int | None = None,
+    ) -> list[tuple[LargeAudit, bool]]:
+        """Batch audit generation. Candidate attempts stay semantically identical to generate_audit."""
+        if len(samples) != len(contracts):
+            raise ValueError("samples and contracts must have the same length")
+        if not samples:
+            return []
+
+        messages = [
+            self._build_audit_messages(sample, contract, show_gold=show_gold)
+            for sample, contract in zip(samples, contracts)
+        ]
+        candidates: list[list[dict]] = [[] for _ in samples]
+        effective_batch = max(1, int(batch_size or self.audit_batch_size))
+
+        total_candidates = self.num_audit_candidates
+        for attempt in range(total_candidates):
+            temperature = 0.0 if attempt == 0 else self.audit_temperature
+            for start in range(0, len(samples), effective_batch):
+                end = start + effective_batch
+                texts = self._generate_many(messages[start:end], temperature=temperature)
+                if len(texts) != len(messages[start:end]):
+                    raise RuntimeError(
+                        "batch audit generation returned a different number of outputs")
+                for offset, text in enumerate(texts):
+                    idx = start + offset
+                    candidates[idx].append(self._candidate_from_text(
+                        samples[idx], contracts[idx], text, round_id, attempt, temperature))
+
+        extra_retries = max(0, self.json_retry - total_candidates)
+        retry_indices = [
+            idx for idx, sample_candidates in enumerate(candidates)
+            if not any(c["json_valid"] for c in sample_candidates)
+        ]
+        for retry in range(extra_retries):
+            if not retry_indices:
+                break
+            attempt = total_candidates + retry
+            next_retry_indices = []
+            for start in range(0, len(retry_indices), effective_batch):
+                chunk = retry_indices[start:start + effective_batch]
+                texts = self._generate_many(
+                    [messages[idx] for idx in chunk],
+                    temperature=self.audit_temperature,
+                )
+                if len(texts) != len(chunk):
+                    raise RuntimeError(
+                        "batch audit retry returned a different number of outputs")
+                for offset, text in enumerate(texts):
+                    idx = chunk[offset]
+                    candidates[idx].append(self._candidate_from_text(
+                        samples[idx], contracts[idx], text, round_id, attempt,
+                        self.audit_temperature))
+                    if not any(c["json_valid"] for c in candidates[idx]):
+                        next_retry_indices.append(idx)
+            retry_indices = next_retry_indices
+
+        return [
+            self._select_best_candidate(sample, sample_candidates)
+            for sample, sample_candidates in zip(samples, candidates)
+        ]
+
+    def generate_audit(
+        self,
+        sample: RagSample,
+        contract: EvidenceContract,
+        show_gold: bool = False,
+        round_id: int = 0,
+    ) -> tuple[LargeAudit, bool]:
+        """生成审计，带 JSON 重试与降级。返回 (LargeAudit, json_valid)。"""
+        return self.generate_audit_batch(
+            [sample], [contract], show_gold=show_gold, round_id=round_id, batch_size=1)[0]
 
     def save_lora(self, out_dir: str) -> None:
         self.model.save_pretrained(out_dir)

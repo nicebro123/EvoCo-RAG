@@ -816,6 +816,7 @@ contract:
 training:
   num_rounds: 3
   batch_size: 4
+  large_batch_size: 2
   num_generations: 2
   small_lr: 5.0e-5
   large_lr: 1.0e-5
@@ -833,6 +834,7 @@ reward:
 runtime:
   candidate_doc_char_limit: 1200
   num_audit_candidates: 3
+  audit_batch_size: 2
   audit_temperature: 0.7
   max_prompt_length: 3072
   max_completion_length: 1024
@@ -851,6 +853,17 @@ CUDA_VISIBLE_DEVICES=2,3 python scripts/train_evoco.py --config configs/evoco_po
 和 `audits/round_000.jsonl`，并按 `runtime.progress_interval` 打印
 `round 0: experience 500/12868 elapsed=... rate=... eta=...` 形式的进度。
 如果完整训练看起来很久没有结束，先检查进度日志和 replay 文件行数。
+
+影响训练吞吐的两个主要 batch 参数：
+
+| 配置 | 作用 | 默认建议 |
+|---|---|---|
+| `runtime.audit_batch_size` | 大模型审计生成的 batch size，训练阶段和测试集 `run_inference` 都会使用 | 2 H20 先用 `2`，显存稳定后可试 `4` |
+| `training.large_batch_size` | 大模型 LoRA SFT 的 batch size | 先用 `2`，如果 SFT 显存稳定再上调 |
+
+这两个参数主要改善吞吐，不直接改变精度目标。精度相关参数仍是
+`contract.top_k`、`contract.max_selected_docs`、`runtime.num_audit_candidates`
+和 `runtime.candidate_doc_char_limit`。
 
 如果训练进程在 experience generation 阶段中断，重新执行同一条训练命令时会读取
 已有 `replay/round_xxx.jsonl` 中合法的样本行，跳过已经完成的 `sample_id`，并重建
@@ -1199,7 +1212,7 @@ Audited reranker training
 
 ## 17. 实现状态（已落地代码）
 
-本节记录截至当前已实现的代码，对应 `CoRAG-D63F /evoco_rag/` 包。所有核心层（不依赖 torch）已通过 38 个单元测试，并用真实 16 条 PopQA 数据跑通 seed replay 与完整 no-model 消融跑批。
+本节记录截至当前已实现的代码，对应 `CoRAG-D63F /evoco_rag/` 包。核心层（不依赖真实模型权重）已通过本机回归测试，并用 PopQA fast 配置跑通完整 no-model 消融。
 
 ### 17.1 已实现模块与对应章节
 
@@ -1216,19 +1229,19 @@ Audited reranker training
 | `evoco_rag/config.py` | §8 | 完成：yaml/json 配置 |
 | `evoco_rag/auditor.py` | §5.6、§14.1 | 完成：prompt 构造 + robust JSON 提取、降级、兜底 |
 | `evoco_rag/small_model.py` | §5.3 | 完成：rank、contract、启发式 evidence/action 接口；torch 延迟导入 |
-| `evoco_rag/large_model.py` | §5.5 | 完成：bf16 默认、4bit 可选、JSON 重试；torch 延迟导入 |
+| `evoco_rag/large_model.py` | §5.5 | 完成：bf16 默认、4bit 可选、JSON 重试、批量 audit generation；torch 延迟导入 |
 | `evoco_rag/trainers/small_trainer.py` | §5.10、§10.3 | 完成：文档级 ranking LoRA 训练 |
-| `evoco_rag/trainers/large_trainer.py` | §5.11、§10.1/§10.2 | 完成：SFT + GRPO reward 函数，reward 无文件副作用 |
-| `evoco_rag/trainers/coevolution_trainer.py` | §5.12 | 完成：单轮/多轮调度、消融开关、流式 contracts/audits/replay 写入、进度日志、metrics/checkpoint |
+| `evoco_rag/trainers/large_trainer.py` | §5.11、§10.1/§10.2 | 完成：批量 SFT + GRPO reward 函数，reward 无文件副作用 |
+| `evoco_rag/trainers/coevolution_trainer.py` | §5.12 | 完成：单轮/多轮调度、消融开关、批量 audit、流式 contracts/audits/replay 写入、partial resume、阶段耗时、metrics/checkpoint |
 | `evoco_rag/evaluation/metrics.py` | §7.1 | 完成：答案、检索、证据、成本、校准指标 |
-| `evoco_rag/evaluation/evaluator.py` | §7、§10.4 | 完成：离线 evaluate + 测试集 run_inference，测试不见 gold |
+| `evoco_rag/evaluation/evaluator.py` | §7、§10.4 | 完成：离线 evaluate + 批量测试集 run_inference，测试不见 gold |
 | `scripts/build_seed_replay.py` | §6 阶段1 | 完成：纯 CPU 生成 seed replay + contracts/audits/manifest |
 | `scripts/train_evoco.py` | §6 阶段6、§9 | 完成：训练入口、fresh/resume 保护、权重 manifest |
 | `scripts/eval_evoco.py` | §7、§9 | 完成：测试集评估入口、adapter root/latest 解析 |
 | `scripts/inspect_replay.py` | §13 | 完成：replay 分布与指标查看 |
 | `scripts/run_ablations.py` | §7.2 | 完成：实验矩阵跑批、独立 checkpoint root、汇总对比表 |
 | `configs/evoco_popqa.yaml`、`configs/debug.yaml` | §8 | 完成：全量 + debug 配置 |
-| `tests/test_*.py`、`pytest.ini` | §12 | 完成：38 个单测全通过，pytest 不误收集重模型脚本 |
+| `tests/test_*.py`、`pytest.ini` | §12 | 完成：57 passed, 4 skipped；pytest 不误收集重模型脚本 |
 
 ### 17.2 与文档约定的两处对齐
 
@@ -1246,7 +1259,7 @@ Audited reranker training
 
 ### 17.4 本机已验证 / 待 GPU 验证
 
-- 本机 CPU 已验证：schema 校验、四象限归因、verifier、replay、JSON 解析、权重路径解析、指标、seed replay 实跑、完整 no-model 消融跑批。
+- 本机 CPU 已验证：schema 校验、四象限归因、verifier、replay、JSON 解析、权重路径解析、指标、batch audit 路径、batch SFT 假模型路径、完整 no-model 消融跑批。
 - 待 H20 验证：reranker/LLM 加载、bf16 训练、真实审计 JSON 成功率、双 LoRA 多轮协同进化收敛。
   入口：`CUDA_VISIBLE_DEVICES=2,3 python scripts/train_evoco.py --config configs/debug.yaml`（先 16 条），通过后切 `configs/evoco_popqa_fast.yaml`（512 条快速验证），最后再切 `configs/evoco_popqa.yaml` 或 `configs/evoco_popqa_policy.yaml`。
 
@@ -1263,7 +1276,7 @@ Audited reranker training
 | ECR-3 | 可靠审计与抗噪声自训练 | 增强审计一致性、trust weight、人工抽样导出和 replay 降噪 | **已完成核心统计**：多候选摘要、`self_consistency`、`trust_components`、trust summary 已实现 | `evoco_rag/large_model.py`、`evoco_rag/auditor.py`、`evoco_rag/verifier.py`、`evoco_rag/replay_buffer.py` | 还需人工抽样导出和人工一致率评估 |
 | ECR-4 | 成本感知动态检索动作 | 让 `answer_now/retrieve_more/rewrite_query/ask_auditor` 从启发式逐步变为可学习策略 | **代码完成，待实验成表**：已加入 `action_mode=heuristic/policy/hybrid`、policy action 置信覆盖、action cost penalty 和 accuracy-cost Pareto 指标 | `evoco_rag/contract.py`、`evoco_rag/small_model.py`、`evoco_rag/trainers/small_trainer.py`、`evoco_rag/evaluation/metrics.py` | 还需用 `configs/evoco_popqa_policy.yaml` 对比固定 top-k / heuristic / hybrid policy 的 accuracy-cost Pareto |
 | ECR-5 | 多粒度证据合约 | 从 document-level 扩展到 sentence/span-level，并支持多跳证据组合 | **待做**：当前仍是文档级 + 句子启发式 span | `evoco_rag/contract.py`、`evoco_rag/schemas.py`、`evoco_rag/text_utils.py`、`evoco_rag/verifier.py` | citation correctness、span support、multi-hop coverage 可输出 |
-| ECR-6 | 大模型忠实生成与审计格式协同优化 | 在 SFT 基础上接入偏好/奖励优化，降低 unsupported answer | **待做**：当前有 SFT 入口和 GRPO reward 函数接口，尚未完整偏好优化 | `evoco_rag/trainers/large_trainer.py`、`evoco_rag/large_model.py`、`evoco_rag/auditor.py` | JSON parse rate 提升；unsupported answer rate 下降 |
+| ECR-6 | 大模型忠实生成与审计格式协同优化 | 在 SFT 基础上接入偏好/奖励优化，降低 unsupported answer | **部分完成**：批量 SFT、批量 audit generation 和 GRPO reward 函数接口已落地，尚未完整偏好优化/GRPO rollout | `evoco_rag/trainers/large_trainer.py`、`evoco_rag/large_model.py`、`evoco_rag/auditor.py` | JSON parse rate 提升；unsupported answer rate 下降 |
 | ECR-7 | 多轮协同进化稳定性 | 增加 round 级曲线、漂移监控、replay 质量统计和 early stop | **待做**：当前支持多轮 checkpoint，但缺少 drift/early-stop/plot 脚本 | `evoco_rag/trainers/coevolution_trainer.py`、`evoco_rag/replay_buffer.py`、`evoco_rag/evaluation/evaluator.py` | round-by-round accuracy/support/cost 曲线完整，退化时可停止 |
 | ECR-8 | 跨数据集和强基线验证 | 扩展数据加载、baseline runner、消融矩阵和结果汇总 | **待做**：当前主要支持 PopQA | `evoco_rag/data.py`、`configs/`、`scripts/run_ablations.py`、`evoco_rag/evaluation/metrics.py` | PopQA + NQ + HotpotQA/2Wiki + ASQA 至少两类任务可运行 |
 
@@ -1276,7 +1289,7 @@ Audited reranker training
 | ECR-3 | **核心统计已完成** | 已保存 audit candidate 摘要、候选得分、一致性；已拆分 `trust_components`；剩余是人工抽样导出和人工一致率评估 | 已复用 `runtime.num_audit_candidates`；后续可增加 `runtime.audit_trust_threshold`、`runtime.trust_filter_mode` | 已扩展 `tests/test_auditor.py`、`tests/test_verifier.py`；后续新增 `scripts/export_audit_review.py` |
 | ECR-4 | **代码完成，待实验成表** | 已保留启发式 action 作为 teacher，并支持 `heuristic`、`policy`、`hybrid` 三种 action 模式；policy head 输出 action confidence，hybrid 模式可按置信度覆盖启发式；metrics 已输出 action cost 和 accuracy-cost Pareto 点 | 已新增 `contract.action_mode`、`contract.policy_action_min_conf`、`reward.audit_call_cost`、`reward.rewrite_cost`、`reward.retrieve_more_cost` | 已新增 `tests/test_action_policy.py`，并扩展 `tests/test_rewards.py`、`tests/test_metrics.py`；后续新增低成本/高召回实验配置 |
 | ECR-5 | **待做** | `EvidenceItem` 增加 `sentence_id`、`span_start`、`span_end`、`hop_id`；`text_utils.py` 实现句子切分和 offset；`verifier.py` 校验 quote 与 span | `contract.evidence_granularity`、`contract.max_evidence_hops` | `tests/test_contract_spans.py`、`tests/test_verifier_spans.py` |
-| ECR-6 | **待做** | `large_trainer.py` 构造 supported SFT、unsupported correction、preference pairs；可选接入 DPO/ORPO/GRPO；严格区分 train-time gold audit 和 eval-time blind generation | `training.large_objective`、`training.preference_loss_weight` | 扩展 `tests/test_large_trainer.py`；测试 eval prompt 不含 gold answers |
+| ECR-6 | **部分完成** | 已完成批量 audit generation、批量 SFT、异常恢复和 eval-time blind generation；剩余是构造 unsupported correction / preference pairs，并可选接入 DPO/ORPO/GRPO | 已新增 `runtime.audit_batch_size`、`training.large_batch_size`；后续可加 `training.large_objective`、`training.preference_loss_weight` | 已新增 `tests/test_large_batching.py`；后续扩展真实 GRPO/DPO dry-run 测试 |
 | ECR-7 | **待做** | `coevolution_trainer.py` 保存每轮质量摘要；`ReplayBuffer` 统计新样本、hard negative、low trust、anchor 覆盖；支持 early stop 和 rollback | `training.early_stop_metric`、`training.early_stop_patience`、`training.rollback_on_degradation` | 新增 `scripts/plot_round_metrics.py`；`tests/test_coevolution_stability.py` |
 | ECR-8 | **待做** | `data.py` 增加 NQ、HotpotQA/2Wiki、ASQA adapter；`run_ablations.py` 支持 vanilla RAG、RAG+reranker、answer-only CoRAG、EvoCo variants；汇总多 seed 结果 | `data.dataset_name` 扩展；新增多数据集 yaml | 新增 `scripts/collect_results.py`；每个 dataset adapter 有 schema 测试 |
 
@@ -1287,7 +1300,7 @@ Audited reranker training
 1. **已完成代码落地：ECR-1/ECR-2/ECR-3/ECR-4**。下一步需要在真实模型输出上跑消融，形成 policy head、责任归因、审计可靠性和 accuracy-cost Pareto 表。
 2. **下一步优先：ECR-7**。用 round-by-round 曲线证明“协同进化”不是单轮自训练，并增加 early stop / drift 监控降低多轮退化风险。
 3. **随后做 ECR-8**：补强跨数据集和强基线验证，让结论不局限于 PopQA。
-4. **最后做 ECR-5/ECR-6**：扩展证据粒度和大模型忠实生成优化，支撑更完整的 A 会实验。
+4. **最后补强 ECR-5/ECR-6**：扩展证据粒度，并把当前批量 SFT 入口升级为可验证的偏好/奖励优化，支撑更完整的 A 会实验。
 
 最小 CCF-A 冲刺版应至少完成：
 
@@ -1310,4 +1323,4 @@ Audited reranker training
 | ECR-2 | 已增加 `attribution_case`、`small_credit_weight`、`large_credit_weight`、`wrong_retriever_reward_if_answer_only`；`metrics`、`ReplayBuffer`、`inspect_replay.py` 均可输出责任归因统计 | 还需要在真实模型审计结果上跑 ablation，形成论文表格 |
 | ECR-3 | 已增加 `LargeAudit.audit_metadata`、多候选审计摘要、`self_consistency`、`RuleVerification.trust_components`、trust summary 指标 | 还需要增加人工抽样导出脚本，并用真实审计样本估计人工一致率 |
 | ECR-4 | 已增加 `contract.action_mode`、policy action confidence、hybrid action 选择逻辑、action cost reward penalty、metrics 中的 `avg_action_cost_penalty` / `accuracy_cost_pareto_point`，policy 配置默认启用 hybrid 模式 | 还需要跑固定 top-k、heuristic action、hybrid policy action 的真实消融，形成 accuracy-cost Pareto 曲线 |
-| ECR-5 至 ECR-8 | 文档已有 TODO，其中 ECR-7/ECR-8 是下一阶段最关键路径 | 尚未作为本轮实现目标 |
+| ECR-5 至 ECR-8 | 文档已有 TODO，其中 ECR-6 已完成批量 SFT/audit 的工程加速，ECR-7/ECR-8 是下一阶段最关键路径 | ECR-6 尚缺偏好优化/GRPO rollout；ECR-7/ECR-8 尚未作为本轮实现目标 |

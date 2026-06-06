@@ -47,6 +47,7 @@ def main():
                                           max_completion_length=cfg.runtime.max_completion_length,
                                           candidate_doc_char_limit=cfg.runtime.candidate_doc_char_limit,
                                           num_audit_candidates=cfg.runtime.num_audit_candidates,
+                                          audit_batch_size=cfg.runtime.audit_batch_size,
                                           audit_temperature=cfg.runtime.audit_temperature)
     evaluator = Evaluator(cfg, small_policy, large_auditor)
     metrics = evaluator.run_inference(samples)

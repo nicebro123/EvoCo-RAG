@@ -249,12 +249,21 @@ contract:
 runtime:
   candidate_doc_char_limit: 1200
   num_audit_candidates: 3
+  audit_batch_size: 2
   audit_temperature: 0.7
+training:
+  batch_size: 4
+  large_batch_size: 2
 ```
 
 `candidate_doc_char_limit` increases evidence visibility in the audit prompt.
 `num_audit_candidates` generates multiple answer/audit candidates and selects
 the one with the strongest evidence-consistency score.
+`runtime.audit_batch_size` batches large-model audit generation during training
+and evaluation. `training.large_batch_size` batches large-model LoRA SFT steps.
+Both improve throughput; they do not change the evidence selection objective.
+On 2 H20 GPUs, start with `2`. If memory remains stable, try `4` for
+`audit_batch_size`; reduce it if CUDA OOM appears.
 
 Round generation is streamed. During a round, the trainer prints progress like
 `round 0: experience 500/12868 elapsed=... rate=... eta=...`, and incrementally
@@ -403,7 +412,11 @@ Current local check status:
 
 ```text
 python -m pytest -q
-38 passed
+57 passed, 4 skipped
+python scripts/run_ablations.py --config configs/evoco_popqa_fast.yaml --no_models
+passed
+python scripts/inspect_replay.py --replay ../rag_assets/outputs/evoco_popqa_fast/ablations/evoco_full/replay/round_000.jsonl
+passed
 ```
 
 ## References

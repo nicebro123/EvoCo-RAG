@@ -61,6 +61,9 @@ class CoevolutionTrainer:
     def _replay_flush_interval(self) -> int:
         return max(0, int(getattr(self.cfg.runtime, "replay_flush_interval", 10)))
 
+    def _audit_batch_size(self) -> int:
+        return max(1, int(getattr(self.cfg.runtime, "audit_batch_size", 1)))
+
     def _log_experience_progress(
         self,
         round_id: int,
@@ -117,10 +120,8 @@ class CoevolutionTrainer:
         self._write_jsonl(contracts_path, [e.contract for e in experiences])
         self._write_jsonl(audits_path, [e.audit for e in experiences])
 
-    # --------------------------------------------------- 单样本经验生成
-    def make_experience(self, sample, round_id: int) -> ReplayExperience:
+    def _build_contract_for_sample(self, sample, round_id: int):
         cfg = self.cfg
-        # 1) 小模型证据合约
         if self.small is not None:
             contract = self.small.build_contract(
                 sample, round_id=round_id, top_k=cfg.contract.top_k,
@@ -140,28 +141,29 @@ class CoevolutionTrainer:
                                       max_selected_docs=cfg.contract.max_selected_docs,
                                       action_mode=cfg.contract.action_mode,
                                       policy_action_min_conf=cfg.contract.policy_action_min_conf)
-
         # 消融：关闭动态 action policy → 固定 answer_now（等价固定 top-k）
         if not cfg.ablation.use_action_policy:
             from ..schemas import RetrievalAction
             contract.retrieval_action = RetrievalAction.ANSWER_NOW
+        return contract
 
-        # 2) 大模型审计（消融：可关闭，用占位审计）
-        json_valid = True
-        if cfg.ablation.use_evidence_audit and self.large is not None:
-            audit, json_valid = self.large.generate_audit(
-                sample, contract, show_gold=True, round_id=round_id)
-        else:
-            from ..schemas import LargeAudit
-            top = contract.selected_doc_ids()[:1]
-            audit = LargeAudit(sample_id=sample.sample_id, round=round_id,
-                               final_answer="", used_doc_ids=top)
+    def _placeholder_audit(self, sample, contract, round_id: int):
+        from ..schemas import LargeAudit
+        top = contract.selected_doc_ids()[:1]
+        return LargeAudit(sample_id=sample.sample_id, round=round_id,
+                          final_answer="", used_doc_ids=top), True
 
-        # 3) 规则验证
+    def _finalize_experience(
+        self,
+        sample,
+        round_id: int,
+        contract,
+        audit,
+        json_valid: bool,
+    ) -> ReplayExperience:
         verification = verify(sample, contract, audit, json_valid=json_valid)
 
-        # 4) reward（消融：use_decomposed_reward=False → 退回 answer-only reward）
-        if cfg.ablation.use_decomposed_reward:
+        if self.cfg.ablation.use_decomposed_reward:
             reward = compute_decomposed_reward(sample, contract, audit, verification, self.cfg.reward)
         else:
             from ..schemas import RewardBreakdown
@@ -176,6 +178,44 @@ class CoevolutionTrainer:
             contract=contract.to_dict(), audit=audit.to_dict(),
             verification=verification.to_dict(), rewards=reward.to_dict(),
             training_targets=targets)
+
+    # --------------------------------------------------- 单样本经验生成
+    def make_experience(self, sample, round_id: int) -> ReplayExperience:
+        contract = self._build_contract_for_sample(sample, round_id)
+        if self.cfg.ablation.use_evidence_audit and self.large is not None:
+            audit, json_valid = self.large.generate_audit(
+                sample, contract, show_gold=True, round_id=round_id)
+        else:
+            audit, json_valid = self._placeholder_audit(sample, contract, round_id)
+        return self._finalize_experience(sample, round_id, contract, audit, json_valid)
+
+    def make_experiences(self, samples, round_id: int) -> list[ReplayExperience]:
+        contracts = [self._build_contract_for_sample(sample, round_id) for sample in samples]
+        if self.cfg.ablation.use_evidence_audit and self.large is not None:
+            if hasattr(self.large, "generate_audit_batch"):
+                audits = self.large.generate_audit_batch(
+                    samples,
+                    contracts,
+                    show_gold=True,
+                    round_id=round_id,
+                    batch_size=self._audit_batch_size(),
+                )
+                if len(audits) != len(samples):
+                    raise RuntimeError("large auditor returned fewer batch audits than samples")
+            else:
+                audits = [
+                    self.large.generate_audit(sample, contract, show_gold=True, round_id=round_id)
+                    for sample, contract in zip(samples, contracts)
+                ]
+        else:
+            audits = [
+                self._placeholder_audit(sample, contract, round_id)
+                for sample, contract in zip(samples, contracts)
+            ]
+        return [
+            self._finalize_experience(sample, round_id, contract, audit, json_valid)
+            for sample, contract, (audit, json_valid) in zip(samples, contracts, audits)
+        ]
 
     # --------------------------------------------------------- 一整轮
     def run_round(self, samples, round_id: int) -> dict:
@@ -215,21 +255,25 @@ class CoevolutionTrainer:
             with open(replay_path, mode, encoding="utf-8") as fr, \
                     open(contracts_path, mode, encoding="utf-8") as fc, \
                     open(audits_path, mode, encoding="utf-8") as fa:
-                for idx, sample in enumerate(pending, start=len(existing) + 1):
-                    exp = self.make_experience(sample, round_id)
-                    self._write_jsonl_record(fr, exp.to_dict())
-                    self._write_jsonl_record(fc, exp.contract)
-                    self._write_jsonl_record(fa, exp.audit)
-                    n += 1
+                generated_count = 0
+                audit_batch_size = self._audit_batch_size()
+                for start in range(0, len(pending), audit_batch_size):
+                    batch = pending[start:start + audit_batch_size]
+                    for exp in self.make_experiences(batch, round_id):
+                        generated_count += 1
+                        idx = len(existing) + generated_count
+                        self._write_jsonl_record(fr, exp.to_dict())
+                        self._write_jsonl_record(fc, exp.contract)
+                        self._write_jsonl_record(fa, exp.audit)
+                        n += 1
 
-                    if flush_interval and (idx % flush_interval == 0):
-                        fr.flush()
-                        fc.flush()
-                        fa.flush()
-                    if progress_interval and (idx % progress_interval == 0 or idx == total):
-                        generated = idx - len(existing)
-                        self._log_experience_progress(
-                            round_id, idx, total, generated, generation_started)
+                        if flush_interval and (idx % flush_interval == 0):
+                            fr.flush()
+                            fc.flush()
+                            fa.flush()
+                        if progress_interval and (idx % progress_interval == 0 or idx == total):
+                            self._log_experience_progress(
+                                round_id, idx, total, generated_count, generation_started)
         elif not existing:
             with open(replay_path, "w", encoding="utf-8"):
                 pass
@@ -278,7 +322,8 @@ class CoevolutionTrainer:
         if self.cfg.ablation.train_large_lora and self.large_trainer is not None:
             exps = self.replay.read(round_id)
             sft = self.replay.sample_large_sft(exps)
-            stats["large"] = self.large_trainer.train_sft(sft)
+            stats["large"] = self.large_trainer.train_sft(
+                sft, batch_size=self.cfg.training.large_batch_size)
             large_dir = checkpoint_round_dir(self.cfg.models.large_lora_dir, round_id)
             os.makedirs(large_dir, exist_ok=True)
             self.large_trainer.save(large_dir)

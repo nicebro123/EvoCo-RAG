@@ -27,6 +27,7 @@ contract:
 runtime:
   candidate_doc_char_limit: 1200
   num_audit_candidates: 3
+  audit_batch_size: 2
   audit_temperature: 0.7
   max_prompt_length: 3072
   max_completion_length: 1024
@@ -42,6 +43,7 @@ small_policy:
 training:
   num_rounds: 3
   batch_size: 4
+  large_batch_size: 2
   num_generations: 2
   small_lr: 5.0e-5
   large_lr: 1.0e-5

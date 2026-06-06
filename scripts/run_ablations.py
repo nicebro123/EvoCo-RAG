@@ -90,6 +90,7 @@ def main():
                                                   max_completion_length=cfg.runtime.max_completion_length,
                                                   candidate_doc_char_limit=cfg.runtime.candidate_doc_char_limit,
                                                   num_audit_candidates=cfg.runtime.num_audit_candidates,
+                                                  audit_batch_size=cfg.runtime.audit_batch_size,
                                                   audit_temperature=cfg.runtime.audit_temperature)
             small_trainer = SmallTrainer(
                 small_policy,
@@ -102,7 +103,8 @@ def main():
                 large_auditor,
                 lr=cfg.training.large_lr,
                 max_prompt_length=cfg.runtime.max_prompt_length,
-                max_completion_length=cfg.runtime.max_completion_length)
+                max_completion_length=cfg.runtime.max_completion_length,
+                batch_size=cfg.training.large_batch_size)
 
         evaluator = Evaluator(cfg, small_policy, large_auditor)
         trainer = CoevolutionTrainer(

@@ -19,6 +19,19 @@ class RecordingLarge:
     def __init__(self):
         self.calls = []
 
+    def generate_audit_batch(self, samples, contracts, show_gold, round_id, batch_size):
+        self.calls.append({
+            "contracts": contracts,
+            "contract": contracts[0] if contracts else None,
+            "show_gold": show_gold,
+            "round_id": round_id,
+            "batch_size": batch_size,
+        })
+        return [
+            (make_audit(final_answer="politician", used_doc_ids=[0]), True)
+            for _ in samples
+        ]
+
     def generate_audit(self, sample, contract, show_gold, round_id):
         self.calls.append({
             "contract": contract,
@@ -32,6 +45,7 @@ def test_run_inference_passes_action_policy_config():
     cfg = EvoCoConfig()
     cfg.contract.action_mode = "hybrid"
     cfg.contract.policy_action_min_conf = 0.77
+    cfg.runtime.audit_batch_size = 3
     small = RecordingSmall()
     large = RecordingLarge()
 
@@ -41,6 +55,7 @@ def test_run_inference_passes_action_policy_config():
     assert small.calls[0]["policy_action_min_conf"] == 0.77
     assert large.calls[0]["show_gold"] is False
     assert large.calls[0]["round_id"] == 2
+    assert large.calls[0]["batch_size"] == 3
 
 
 def test_run_inference_no_action_ablation_forces_answer_now():
