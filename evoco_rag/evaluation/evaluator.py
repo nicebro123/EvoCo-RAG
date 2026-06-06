@@ -36,7 +36,7 @@ class Evaluator:
         """测试集推理：gold answers 不可见（show_gold=False）。"""
         from ..verifier import verify
         from ..rewards import build_training_targets, compute_decomposed_reward
-        from ..schemas import ReplayExperience
+        from ..schemas import ReplayExperience, RetrievalAction
 
         records = []
         for sample in test_samples:
@@ -44,7 +44,11 @@ class Evaluator:
                 sample, round_id=round_id, top_k=self.cfg.contract.top_k,
                 high_conf_threshold=self.cfg.contract.high_conf_threshold,
                 answer_now_margin=self.cfg.contract.answer_now_margin,
-                max_selected_docs=self.cfg.contract.max_selected_docs)
+                max_selected_docs=self.cfg.contract.max_selected_docs,
+                action_mode=self.cfg.contract.action_mode,
+                policy_action_min_conf=self.cfg.contract.policy_action_min_conf)
+            if not self.cfg.ablation.use_action_policy:
+                contract.retrieval_action = RetrievalAction.ANSWER_NOW
             audit, json_valid = self.large.generate_audit(
                 sample, contract, show_gold=False, round_id=round_id)
             v = verify(sample, contract, audit, json_valid=json_valid)
