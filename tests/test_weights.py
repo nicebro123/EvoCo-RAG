@@ -69,3 +69,4 @@ def test_prepare_layout_and_manifest(tmp_path):
     assert manifest["weights"]["large_checkpoint_root"] == cfg.models.large_lora_dir
     assert manifest["runtime_config"]["candidate_doc_char_limit"] == 1200
     assert manifest["small_policy_config"]["use_policy_heads"] is False
+    assert manifest["models_config"]["use_4bit"] is False

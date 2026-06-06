@@ -9,7 +9,7 @@ doc0 含答案 'politician'，doc1 不含。通过控制：
 from conftest import make_audit, make_contract, make_sample
 
 from evoco_rag.rewards import build_training_targets, compute_decomposed_reward
-from evoco_rag.schemas import AttributionCase, FailureType
+from evoco_rag.schemas import AttributionCase, FailureType, RetrievalAction
 from evoco_rag.verifier import verify
 
 
@@ -81,3 +81,13 @@ def test_cost_penalty_grows_with_selected_docs():
     _, r1, _ = _pipeline(selected_ids=[0], final_answer="politician")
     _, r2, _ = _pipeline(selected_ids=[0, 1], final_answer="politician")
     assert r2.cost_penalty > r1.cost_penalty
+
+
+def test_action_cost_penalty_for_retrieve_more():
+    sample = make_sample()
+    contract = make_contract(selected_doc_ids=[1], action=RetrievalAction.RETRIEVE_MORE)
+    audit = make_audit(final_answer="banker", used_doc_ids=[1])
+    verification = verify(sample, contract, audit, json_valid=True)
+    reward = compute_decomposed_reward(sample, contract, audit, verification)
+    assert reward.action_cost_penalty > 0.0
+    assert reward.cost_penalty > 0.0

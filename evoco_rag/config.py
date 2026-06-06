@@ -19,6 +19,8 @@ class ContractConfig:
     high_conf_threshold: float = 0.75
     answer_now_margin: float = 0.15
     max_selected_docs: int = 5
+    action_mode: str = "heuristic"  # heuristic | policy | hybrid
+    policy_action_min_conf: float = 0.45
 
 
 @dataclass

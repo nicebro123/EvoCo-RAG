@@ -154,10 +154,13 @@ class SmallRagPolicy:
                 confidence_scores = torch.sigmoid(
                     head_out["confidence_logits"]).float().cpu().tolist()
                 action_logits = head_out["action_logits"].mean(dim=0).float().cpu()
+                action_probs = torch.softmax(action_logits, dim=-1)
                 action_id = int(torch.argmax(action_logits).item())
                 self.last_policy_prediction = {
                     "action": self.action_labels[action_id],
                     "action_logits": [round(float(x), 4) for x in action_logits.tolist()],
+                    "action_probs": [round(float(x), 4) for x in action_probs.tolist()],
+                    "action_confidence": round(float(action_probs[action_id].item()), 4),
                 }
             else:
                 self.last_policy_prediction = {}
@@ -180,17 +183,26 @@ class SmallRagPolicy:
         high_conf_threshold: float = 0.75,
         answer_now_margin: float = 0.15,
         max_selected_docs: int = 3,
+        action_mode: str = "heuristic",
+        policy_action_min_conf: float = 0.45,
     ) -> EvidenceContract:
         ranked = self.rank_documents(sample)
+        policy_action = self.last_policy_prediction.get("action")
+        policy_action_confidence = self.last_policy_prediction.get("action_confidence")
         contract = build_contract(
             sample, ranked, round_id=round_id, top_k=top_k,
             high_conf_threshold=high_conf_threshold,
             answer_now_margin=answer_now_margin,
             max_selected_docs=max_selected_docs,
+            action_mode=action_mode,
+            policy_action=policy_action,
+            policy_action_confidence=policy_action_confidence,
+            policy_action_min_conf=policy_action_min_conf,
         )
         if self.last_policy_prediction:
             contract.uncertainty["policy_predicted_action"] = self.last_policy_prediction["action"]
             contract.uncertainty["policy_action_logits"] = self.last_policy_prediction["action_logits"]
+            contract.uncertainty["policy_action_probs"] = self.last_policy_prediction["action_probs"]
             contract.uncertainty["policy_heads_loaded"] = self.policy_heads_loaded
         return contract
 

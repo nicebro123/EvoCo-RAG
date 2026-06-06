@@ -27,10 +27,13 @@ def test_metrics_keys_and_accuracy():
                 "citation_correctness", "unsupported_answer_rate",
                 "avg_selected_docs", "audit_call_rate",
                 "attribution_case_distribution", "wrong_retriever_reward_rate",
-                "audit_json_valid_rate", "audit_trust_weight_mean"):
+                "audit_json_valid_rate", "audit_trust_weight_mean",
+                "avg_action_cost_penalty", "avg_total_cost_penalty",
+                "accuracy_cost_pareto_point"):
         assert key in m
     assert m["num_examples"] == 2
     assert m["accuracy"] == 50.0  # 一对一错
+    assert "avg_total_cost_penalty" in m["accuracy_cost_pareto_point"]
 
 
 def test_unsupported_answer_rate():

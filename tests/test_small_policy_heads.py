@@ -27,6 +27,8 @@ def test_policy_configs_enable_heads():
     full = EvoCoConfig.load("configs/evoco_popqa_policy.yaml")
     assert debug.small_policy.use_policy_heads is True
     assert full.small_policy.use_policy_heads is True
+    assert debug.contract.action_mode == "hybrid"
+    assert full.contract.action_mode == "hybrid"
     assert debug.output_dir.endswith("policy_heads")
     assert full.models.small_lora_dir.endswith("evoco_popqa_policy/small")
 

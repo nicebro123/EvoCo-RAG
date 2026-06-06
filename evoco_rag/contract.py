@@ -13,6 +13,9 @@ from .schemas import Answerability, EvidenceContract, EvidenceItem, RetrievalAct
 from .text_utils import best_evidence_span
 
 
+ACTION_MODES = {"heuristic", "policy", "hybrid"}
+
+
 def _sigmoid(x: float) -> float:
     if x >= 0:
         return 1.0 / (1.0 + math.exp(-x))
@@ -32,6 +35,39 @@ def _decide_action(top1_conf: float, margin: float, high_conf_threshold: float,
     return RetrievalAction.ANSWER_NOW, Answerability.MEDIUM
 
 
+def _answerability_for_action(action: str, top1_conf: float, high_conf_threshold: float) -> str:
+    if action == RetrievalAction.ANSWER_NOW and top1_conf >= high_conf_threshold:
+        return Answerability.HIGH
+    if action == RetrievalAction.RETRIEVE_MORE:
+        return Answerability.LOW
+    return Answerability.MEDIUM
+
+
+def _resolve_action(
+    heuristic_action: str,
+    heuristic_answerability: str,
+    top1_conf: float,
+    high_conf_threshold: float,
+    action_mode: str,
+    policy_action: str | None,
+    policy_action_confidence: float | None,
+    policy_action_min_conf: float,
+) -> tuple[str, str, bool]:
+    if action_mode not in ACTION_MODES:
+        raise ValueError(f"非法 action_mode={action_mode!r}，允许值: {sorted(ACTION_MODES)}")
+    if action_mode == "heuristic" or policy_action not in RetrievalAction.ALL:
+        return heuristic_action, heuristic_answerability, False
+    if action_mode == "hybrid" and (
+        policy_action_confidence is None or policy_action_confidence < policy_action_min_conf
+    ):
+        return heuristic_action, heuristic_answerability, False
+    return (
+        policy_action,
+        _answerability_for_action(policy_action, top1_conf, high_conf_threshold),
+        True,
+    )
+
+
 def build_contract(
     sample,
     ranked_docs: list[dict],
@@ -41,6 +77,10 @@ def build_contract(
     answer_now_margin: float = 0.15,
     max_selected_docs: int = 3,
     num_retrieval_rounds: int = 1,
+    action_mode: str = "heuristic",
+    policy_action: str | None = None,
+    policy_action_confidence: float | None = None,
+    policy_action_min_conf: float = 0.45,
 ) -> EvidenceContract:
     """把打分结果封装成证据合约。
 
@@ -56,8 +96,18 @@ def build_contract(
     # 简单实体歧义启发：top1/top2 置信度接近视为可能歧义
     entity_ambiguity = len(confidences) >= 2 and abs(confidences[0] - confidences[1]) < 0.05
 
-    action, answerability = _decide_action(
+    heuristic_action, heuristic_answerability = _decide_action(
         top1_conf, margin, high_conf_threshold, answer_now_margin, entity_ambiguity
+    )
+    action, answerability, policy_action_used = _resolve_action(
+        heuristic_action,
+        heuristic_answerability,
+        top1_conf,
+        high_conf_threshold,
+        action_mode,
+        policy_action,
+        policy_action_confidence,
+        policy_action_min_conf,
     )
 
     selected = []
@@ -101,6 +151,15 @@ def build_contract(
         selected_evidence=selected,
         candidate_docs=candidate_docs,
         uncertainty={
+            "action_mode": action_mode,
+            "heuristic_action": heuristic_action,
+            "heuristic_answerability": heuristic_answerability,
+            "policy_action": policy_action,
+            "policy_action_confidence": (
+                round(float(policy_action_confidence), 4)
+                if policy_action_confidence is not None else None
+            ),
+            "policy_action_used": policy_action_used,
             "entity_ambiguity": entity_ambiguity,
             "evidence_conflict": False,
             "missing_relation": top1_conf < high_conf_threshold * 0.6,

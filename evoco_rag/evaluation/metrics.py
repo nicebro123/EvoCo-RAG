@@ -38,7 +38,7 @@ def compute_metrics(experiences: Iterable) -> dict:
 
     answer_match, support, citation, unsupported = [], [], [], []
     recall_at_k, mrr, answer_in_topk = [], [], []
-    selected_counts, audit_calls, cost_penalties = [], [], []
+    selected_counts, audit_calls, cost_penalties, action_cost_penalties = [], [], [], []
     used_precisions = []
     confidences, outcomes = [], []
     attribution_cases = Counter()
@@ -89,6 +89,7 @@ def compute_metrics(experiences: Iterable) -> dict:
         selected_counts.append(cost.get("num_selected_docs", 0))
         audit_calls.append(1.0 if (a.get("final_answer") or used) else 0.0)
         cost_penalties.append(r.get("cost_penalty", 0.0))
+        action_cost_penalties.append(r.get("action_cost_penalty", 0.0))
         action = c.get("retrieval_action")
         if action:
             action_counts[action] += 1
@@ -130,7 +131,15 @@ def compute_metrics(experiences: Iterable) -> dict:
         "avg_selected_docs": _mean(selected_counts),
         "audit_call_rate": _mean(audit_calls),
         "action_distribution": dict(action_counts),
+        "avg_action_cost_penalty": _mean(action_cost_penalties),
+        "avg_total_cost_penalty": _mean(cost_penalties),
         "cost_per_correct_answer": (sum(cost_penalties) / num_correct) if num_correct else None,
+        "accuracy_cost_pareto_point": {
+            "accuracy": 100.0 * _mean(answer_match),
+            "avg_total_cost_penalty": _mean(cost_penalties),
+            "avg_selected_docs": _mean(selected_counts),
+            "audit_call_rate": _mean(audit_calls),
+        },
         # 审计可靠性
         "audit_json_valid_rate": _mean(json_valid),
         "audit_trust_weight_mean": _mean(trust_weights),

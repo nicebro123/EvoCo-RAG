@@ -48,13 +48,20 @@ class CoevolutionTrainer:
                 sample, round_id=round_id, top_k=cfg.contract.top_k,
                 high_conf_threshold=cfg.contract.high_conf_threshold,
                 answer_now_margin=cfg.contract.answer_now_margin,
-                max_selected_docs=cfg.contract.max_selected_docs)
+                max_selected_docs=cfg.contract.max_selected_docs,
+                action_mode=cfg.contract.action_mode,
+                policy_action_min_conf=cfg.contract.policy_action_min_conf)
         else:
             # 无模型的纯逻辑回放（测试/调试用）：按文档原序当作打分
             ranked = [{"doc_id": d["doc_id"], "score": -i}
                       for i, d in enumerate(sample.documents)]
             contract = build_contract(sample, ranked, round_id=round_id,
-                                      top_k=cfg.contract.top_k)
+                                      top_k=cfg.contract.top_k,
+                                      high_conf_threshold=cfg.contract.high_conf_threshold,
+                                      answer_now_margin=cfg.contract.answer_now_margin,
+                                      max_selected_docs=cfg.contract.max_selected_docs,
+                                      action_mode=cfg.contract.action_mode,
+                                      policy_action_min_conf=cfg.contract.policy_action_min_conf)
 
         # 消融：关闭动态 action policy → 固定 answer_now（等价固定 top-k）
         if not cfg.ablation.use_action_policy:

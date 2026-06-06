@@ -33,6 +33,9 @@ class RewardWeights:
     calibration_weight: float = 0.2
     selected_doc_cost: float = 0.05
     retrieval_round_cost: float = 0.1
+    audit_call_cost: float = 0.1
+    rewrite_cost: float = 0.1
+    retrieve_more_cost: float = 0.1
 
 
 def classify_attribution_case(answer_match: bool, support_rule_passed: bool) -> str:
@@ -95,7 +98,18 @@ def compute_decomposed_reward(
 
     num_selected = contract.cost.get("num_selected_docs", len(contract.selected_evidence))
     num_rounds = contract.cost.get("num_retrieval_rounds", 1)
-    cost_penalty = w.selected_doc_cost * num_selected + w.retrieval_round_cost * num_rounds
+    action_cost_penalty = 0.0
+    if contract.retrieval_action == RetrievalAction.ASK_AUDITOR:
+        action_cost_penalty += w.audit_call_cost
+    elif contract.retrieval_action == RetrievalAction.REWRITE_QUERY:
+        action_cost_penalty += w.rewrite_cost
+    elif contract.retrieval_action == RetrievalAction.RETRIEVE_MORE:
+        action_cost_penalty += w.retrieve_more_cost
+    cost_penalty = (
+        w.selected_doc_cost * num_selected
+        + w.retrieval_round_cost * num_rounds
+        + action_cost_penalty
+    )
 
     total = answer_reward + support_reward + citation_reward + calibration_reward - cost_penalty
     attribution_case = classify_attribution_case(
@@ -106,6 +120,7 @@ def compute_decomposed_reward(
         support_reward=round(support_reward, 4),
         citation_reward=round(citation_reward, 4),
         calibration_reward=round(calibration_reward, 4),
+        action_cost_penalty=round(action_cost_penalty, 4),
         cost_penalty=round(cost_penalty, 4),
         total_reward=round(total, 4),
         attribution_case=attribution_case,

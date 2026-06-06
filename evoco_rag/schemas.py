@@ -318,6 +318,7 @@ class RewardBreakdown:
     support_reward: float = 0.0
     citation_reward: float = 0.0
     calibration_reward: float = 0.0
+    action_cost_penalty: float = 0.0
     cost_penalty: float = 0.0
     total_reward: float = 0.0
     attribution_case: str = ""
@@ -329,7 +330,7 @@ class RewardBreakdown:
     def from_dict(cls, d: dict) -> "RewardBreakdown":
         values = {k: d.get(k, 0.0) for k in (
             "answer_reward", "support_reward", "citation_reward",
-            "calibration_reward", "cost_penalty", "total_reward",
+            "calibration_reward", "action_cost_penalty", "cost_penalty", "total_reward",
         )}
         values["attribution_case"] = d.get("attribution_case", "")
         return cls(**values)
