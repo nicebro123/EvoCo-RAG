@@ -20,6 +20,10 @@ The expected workflow is:
 7. Run evaluation
 ```
 
+For a complete reproduction and experiment guide, including two-H20 settings,
+ablation commands, hyperparameter templates, and repository hygiene rules, see
+[docs/REPRODUCIBILITY_AND_EXPERIMENTS.md](docs/REPRODUCIBILITY_AND_EXPERIMENTS.md).
+
 ## 1. Clone
 
 ```bash
@@ -395,6 +399,10 @@ scripts/run_ablations.py
 scripts/build_seed_replay.py
 scripts/inspect_replay.py
 ```
+
+Experiment-ready configuration templates live under `configs/experiments/`.
+Use a new `project.output_dir` and new `models.*_lora_dir` for every experiment
+so checkpoints and metrics never overwrite another run.
 
 ## 10. Optional Code Checks
 

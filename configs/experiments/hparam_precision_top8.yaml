@@ -1,0 +1,69 @@
+project:
+  name: evoco_rag_hparam_precision_top8
+  seed: 42
+  output_dir: ../rag_assets/outputs/experiments/hparam_precision_top8
+
+data:
+  train_path: ../rag_assets/data_v33/Pop/train_labels_list.json
+  test_path: ../rag_assets/data/Pop/test.json
+  dataset_name: Pop
+  debug_size: null
+
+models:
+  small_base_path: ../rag_assets/base_models/reranker/bge-reranker-v2-m3
+  large_base_path: ../rag_assets/base_models/generator/Mistral-Nemo-Instruct-2407
+  small_lora_dir: ../rag_assets/checkpoints/experiments/hparam_precision_top8/small
+  large_lora_dir: ../rag_assets/checkpoints/experiments/hparam_precision_top8/large
+  use_4bit: false
+
+contract:
+  top_k: 8
+  high_conf_threshold: 0.75
+  answer_now_margin: 0.15
+  max_selected_docs: 8
+  action_mode: hybrid
+  policy_action_min_conf: 0.45
+
+runtime:
+  candidate_doc_char_limit: 1600
+  num_audit_candidates: 3
+  audit_batch_size: 2
+  audit_temperature: 0.7
+  max_prompt_length: 4096
+  max_completion_length: 1024
+  progress_interval: 50
+  replay_flush_interval: 10
+
+small_policy:
+  use_policy_heads: true
+  evidence_loss_weight: 1.0
+  action_loss_weight: 0.5
+  calibration_loss_weight: 0.2
+
+training:
+  num_rounds: 3
+  batch_size: 4
+  large_batch_size: 2
+  num_generations: 2
+  small_lr: 5.0e-5
+  large_lr: 1.0e-5
+  train_small_lora: true
+  train_large_lora: true
+
+reward:
+  answer_weight: 1.0
+  support_weight: 1.0
+  citation_weight: 1.0
+  calibration_weight: 0.2
+  selected_doc_cost: 0.05
+  retrieval_round_cost: 0.1
+  audit_call_cost: 0.1
+  rewrite_cost: 0.1
+  retrieve_more_cost: 0.1
+
+ablation:
+  use_evidence_audit: true
+  use_action_policy: true
+  use_decomposed_reward: true
+  train_small_lora: true
+  train_large_lora: true

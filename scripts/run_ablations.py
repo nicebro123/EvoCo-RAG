@@ -60,7 +60,22 @@ def main():
     ap.add_argument("--no_models", action="store_true",
                     help="不加载模型，纯启发式逻辑校验")
     ap.add_argument("--only", nargs="*", default=None, help="只跑指定实验名")
+    ap.add_argument("--list", action="store_true", help="列出可用消融实验名后退出")
     args = ap.parse_args()
+
+    if args.list:
+        print("available ablations:")
+        for name in EXPERIMENTS:
+            print(f"  {name}")
+        return
+
+    names = args.only or list(EXPERIMENTS.keys())
+    unknown = [name for name in names if name not in EXPERIMENTS]
+    if unknown:
+        raise SystemExit(
+            f"unknown ablation(s): {', '.join(unknown)}. "
+            f"Available: {', '.join(EXPERIMENTS)}"
+        )
 
     base = EvoCoConfig.load(args.config)
     prepare_weight_layout(base, create=True)
@@ -68,7 +83,6 @@ def main():
     print(f"loaded {len(samples)} samples")
 
     summary = {}
-    names = args.only or list(EXPERIMENTS.keys())
     for name in names:
         overrides = EXPERIMENTS[name]
         cfg = _apply_ablation(base, overrides, name, args.no_models)
