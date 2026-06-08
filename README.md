@@ -24,6 +24,11 @@ For a complete reproduction and experiment guide, including two-H20 settings,
 ablation commands, hyperparameter templates, and repository hygiene rules, see
 [docs/REPRODUCIBILITY_AND_EXPERIMENTS.md](docs/REPRODUCIBILITY_AND_EXPERIMENTS.md).
 
+For multi-dataset packs hosted outside GitHub, see
+[docs/DATASET_PACKS.md](docs/DATASET_PACKS.md). The helper
+`scripts/make_dataset_config.py` generates runnable YAML configs from a
+downloaded `evoco_dataset_pack/dataset_registry.json`.
+
 ## 1. Clone
 
 ```bash
