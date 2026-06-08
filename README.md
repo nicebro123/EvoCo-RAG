@@ -117,6 +117,9 @@ Expected checksum:
 List available datasets:
 
 ```bash
+python scripts/verify_dataset_pack.py \
+  --data-root ../rag_assets/evoco_dataset_pack
+
 python scripts/make_dataset_config.py \
   --data-root ../rag_assets/evoco_dataset_pack \
   --list
@@ -494,6 +497,7 @@ and no-model data pipeline are wired correctly.
 ```bash
 python -m pytest -q
 python -m py_compile evoco_rag/*.py evoco_rag/trainers/*.py evoco_rag/evaluation/*.py scripts/*.py run_train.py run_test.py utils.py llm_local_prompt.py tests/*.py
+python scripts/verify_dataset_pack.py --data-root ../rag_assets/evoco_dataset_pack
 python scripts/make_dataset_config.py --data-root ../rag_assets/evoco_dataset_pack --all --output-root configs/local
 python scripts/make_dataset_config.py --data-root ../rag_assets/evoco_dataset_pack --dataset-id popqa_standard --debug-size 16 --name evoco_popqa_standard_debug --output configs/local/popqa_standard_debug.yaml --output-dir ../rag_assets/outputs_debug/popqa_standard --checkpoint-root ../rag_assets/checkpoints/debug/popqa_standard
 python scripts/build_seed_replay.py --config configs/local/popqa_standard_debug.yaml
@@ -504,7 +508,9 @@ Current local check status:
 
 ```text
 python -m pytest -q
-60 passed, 4 skipped
+62 passed, 4 skipped
+python scripts/verify_dataset_pack.py --data-root ../rag_assets/evoco_dataset_pack
+passed
 python scripts/run_ablations.py --config configs/local/popqa_standard_fast.yaml --no_models
 passed
 python scripts/inspect_replay.py --replay ../rag_assets/outputs/datasets/popqa_standard_fast/ablations/evoco_full/replay/round_000.jsonl

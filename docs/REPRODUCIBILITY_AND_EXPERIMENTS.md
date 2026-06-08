@@ -99,6 +99,9 @@ Expected SHA256:
 List dataset ids:
 
 ```bash
+python scripts/verify_dataset_pack.py \
+  --data-root ../rag_assets/evoco_dataset_pack
+
 python scripts/make_dataset_config.py \
   --data-root ../rag_assets/evoco_dataset_pack \
   --list
@@ -355,6 +358,7 @@ Run before pushing:
 ```bash
 python -m py_compile evoco_rag/*.py evoco_rag/trainers/*.py evoco_rag/evaluation/*.py scripts/*.py run_train.py run_test.py utils.py llm_local_prompt.py tests/*.py
 python -m pytest -q
+python scripts/verify_dataset_pack.py --data-root ../rag_assets/evoco_dataset_pack
 python scripts/make_dataset_config.py --data-root ../rag_assets/evoco_dataset_pack --all --output-root configs/local
 python scripts/run_ablations.py --config configs/local/popqa_standard_fast.yaml --no_models
 python scripts/inspect_replay.py --replay ../rag_assets/outputs/datasets/popqa_standard_fast/ablations/evoco_full/replay/round_000.jsonl
@@ -365,7 +369,7 @@ git status --short --branch
 Expected local CPU-safe result at the time of writing:
 
 ```text
-60 passed, 4 skipped
+62 passed, 4 skipped
 ```
 
 The skipped tests are torch-dependent fake-model tests in CPU-only local

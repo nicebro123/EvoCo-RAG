@@ -92,6 +92,16 @@ test.json:
   ctxs: list[dict]          # each dict has title/text and optional metadata
 ```
 
+Run the strict pack validator after extraction:
+
+```bash
+python scripts/verify_dataset_pack.py \
+  --data-root ../rag_assets/evoco_dataset_pack
+```
+
+The validator checks registry entries, file existence, sample counts, required
+raw fields, and the actual `evoco_rag.data` loader output.
+
 ## Generate Configs
 
 List datasets:
