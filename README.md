@@ -12,7 +12,7 @@ The expected workflow is:
 
 ```text
 1. Clone this repository
-2. Download the preprocessed PopQA data release
+2. Download the Google Drive dataset pack
 3. Download the reranker and generator base weights
 4. Install GPU dependencies
 5. Run debug training
@@ -48,8 +48,14 @@ Expected layout after all downloads:
 parent/
 ├── EvoCo-RAG/
 └── rag_assets/
-    ├── data/Pop/test.json
-    ├── data_v33/Pop/train_labels_list.json
+    ├── evoco_dataset_pack/
+    │   ├── dataset_registry.json
+    │   └── datasets/
+    │       ├── popqa_standard/
+    │       ├── hotpotqa_distractor/
+    │       ├── nq_reader/
+    │       ├── asqa_dpr/
+    │       └── popqa_retrieval/
     ├── base_models/
     │   ├── reranker/bge-reranker-v2-m3/
     │   └── generator/Mistral-Nemo-Instruct-2407/
@@ -60,52 +66,93 @@ parent/
 
 ## 2. Download Data
 
-The code expects the project-preprocessed PopQA data, not raw PopQA. The
-training file already contains retrieved contexts and document-level seed labels;
-the test file contains retrieved contexts under `ctxs`.
-
-Download the release asset with GitHub CLI:
-
-```bash
-mkdir -p ../rag_assets
-gh release download data-v0 \
-  --repo nicebro123/EvoCo-RAG \
-  --pattern evoco_popqa_data.tar.gz \
-  --dir /tmp
-tar -xzf /tmp/evoco_popqa_data.tar.gz -C ../rag_assets
-```
-
-Or download it with `curl`:
-
-```bash
-mkdir -p ../rag_assets
-curl -L \
-  https://github.com/nicebro123/EvoCo-RAG/releases/download/data-v0/evoco_popqa_data.tar.gz \
-  -o /tmp/evoco_popqa_data.tar.gz
-tar -xzf /tmp/evoco_popqa_data.tar.gz -C ../rag_assets
-```
-
-Verify the required files:
-
-```bash
-test -f ../rag_assets/data_v33/Pop/train_labels_list.json
-test -f ../rag_assets/data/Pop/test.json
-```
-
-Required schemas:
+The code expects the project-preprocessed EvoCo-RAG dataset pack, not raw
+PopQA/HotpotQA/NQ/ASQA files. Each dataset in the pack uses the same loader
+layout:
 
 ```text
-train_labels_list.json:
-  question: str
-  answers: list[str]
-  context: list[str]        # each item: "title: ...\ncontext: ..."
-  labels: list[list[str]]   # document-level seed labels/history
-
-test.json:
-  question: str
-  answers: list[str]
-  ctxs: list[dict]          # each dict has title/text and optional metadata
+datasets/<dataset_id>/data_v33/Pop/train_labels_list.json
+datasets/<dataset_id>/data/Pop/test.json
 ```
+
+Google Drive folder:
+
+```text
+https://drive.google.com/drive/folders/1FdzMIxnotAynWIWZMx5XzATNVCpm43iv
+```
+
+Download with `gdown`:
+
+```bash
+pip install -U gdown
+mkdir -p ../rag_assets/rag_data
+gdown --folder \
+  "https://drive.google.com/drive/folders/1FdzMIxnotAynWIWZMx5XzATNVCpm43iv" \
+  -O ../rag_assets/rag_data
+```
+
+The folder contains:
+
+```text
+evoco_dataset_pack.tar.gz
+evoco_dataset_pack.tar.gz.sha256
+UPLOAD_README.md
+```
+
+Verify and unpack:
+
+```bash
+cd ../rag_assets/rag_data
+shasum -a 256 -c evoco_dataset_pack.tar.gz.sha256
+tar -xzf evoco_dataset_pack.tar.gz -C ..
+cd ../../EvoCo-RAG
+```
+
+Expected checksum:
+
+```text
+803c08ec4626da3f7add8a1c0e1dfc7792bd4997fa2d26c7203a27fe56186d28  evoco_dataset_pack.tar.gz
+```
+
+List available datasets:
+
+```bash
+python scripts/make_dataset_config.py \
+  --data-root ../rag_assets/evoco_dataset_pack \
+  --list
+```
+
+Current dataset ids:
+
+| Dataset id | Train | Test | Notes |
+|---|---:|---:|---|
+| `popqa_standard` | 12,868 | 1,399 | Original EvoCo-RAG PopQA layout |
+| `hotpotqa_distractor` | 90,447 | 7,405 | HotpotQA distractor converted to EvoCo format |
+| `nq_reader` | 50,000 | 3,119 | DPR NQ reader converted to EvoCo format |
+| `asqa_dpr` | 4,353 | 948 | ASQA DPR passages converted to EvoCo format |
+| `popqa_retrieval` | 11,413 | 2,854 | PopQA retrieval top-20 converted to EvoCo format |
+
+Generate runnable configs for every dataset:
+
+```bash
+python scripts/make_dataset_config.py \
+  --data-root ../rag_assets/evoco_dataset_pack \
+  --all \
+  --output-root configs/local
+```
+
+Generate full-run configs instead of 512-sample fast configs:
+
+```bash
+python scripts/make_dataset_config.py \
+  --data-root ../rag_assets/evoco_dataset_pack \
+  --all \
+  --full \
+  --output-root configs/local
+```
+
+`configs/local/` is ignored by Git, so locally generated dataset configs do not
+pollute the repository.
 
 ## 3. Download Base Weights
 
@@ -210,31 +257,60 @@ pip install -r requirements-cpu.txt
 
 ## 5. Train
 
-Start with the debug configuration. It uses 16 training samples and writes to
-`../rag_assets/outputs_debug/latest`.
+When using the Google Drive dataset pack, run generated local configs from
+`configs/local/`. Start with a 16-sample PopQA debug config:
 
 ```bash
-CUDA_VISIBLE_DEVICES=2,3 python scripts/train_evoco.py --config configs/debug.yaml
+python scripts/make_dataset_config.py \
+  --data-root ../rag_assets/evoco_dataset_pack \
+  --dataset-id popqa_standard \
+  --debug-size 16 \
+  --name evoco_popqa_standard_debug \
+  --output configs/local/popqa_standard_debug.yaml \
+  --output-dir ../rag_assets/outputs_debug/popqa_standard \
+  --checkpoint-root ../rag_assets/checkpoints/debug/popqa_standard
+
+CUDA_VISIBLE_DEVICES=2,3 python scripts/train_evoco.py \
+  --config configs/local/popqa_standard_debug.yaml
 ```
 
-Then run the fast PopQA policy configuration before launching the full dataset.
-It uses 512 training samples, one audit candidate, shorter prompts, one round,
-and writes to `../rag_assets/outputs/evoco_popqa_fast`.
+Then run a 512-sample fast config for the dataset you want. For the standard
+PopQA split:
 
 ```bash
-CUDA_VISIBLE_DEVICES=2,3 python scripts/train_evoco.py --config configs/evoco_popqa_fast.yaml
+CUDA_VISIBLE_DEVICES=2,3 python scripts/train_evoco.py \
+  --config configs/local/popqa_standard_fast.yaml
 ```
 
-Run the full PopQA configuration only after the fast run finishes normally:
+For a different dataset, replace only the config name:
 
 ```bash
-CUDA_VISIBLE_DEVICES=2,3 python scripts/train_evoco.py --config configs/evoco_popqa.yaml
+CUDA_VISIBLE_DEVICES=2,3 python scripts/train_evoco.py \
+  --config configs/local/hotpotqa_distractor_fast.yaml
+
+CUDA_VISIBLE_DEVICES=2,3 python scripts/train_evoco.py \
+  --config configs/local/nq_reader_fast.yaml
+
+CUDA_VISIBLE_DEVICES=2,3 python scripts/train_evoco.py \
+  --config configs/local/asqa_dpr_fast.yaml
+
+CUDA_VISIBLE_DEVICES=2,3 python scripts/train_evoco.py \
+  --config configs/local/popqa_retrieval_fast.yaml
+```
+
+Run a full config only after the corresponding fast run finishes normally:
+
+```bash
+CUDA_VISIBLE_DEVICES=2,3 python scripts/train_evoco.py \
+  --config configs/local/popqa_standard_full.yaml
 ```
 
 Resume from the latest completed round:
 
 ```bash
-CUDA_VISIBLE_DEVICES=2,3 python scripts/train_evoco.py --config configs/evoco_popqa.yaml --resume
+CUDA_VISIBLE_DEVICES=2,3 python scripts/train_evoco.py \
+  --config configs/local/popqa_standard_full.yaml \
+  --resume
 ```
 
 `--resume` continues from the latest completed checkpoint round. If a process is
@@ -249,19 +325,19 @@ small reranker uses logical `cuda:0`, which maps to the first visible GPU.
 Change the list if you want a different subset, for example
 `CUDA_VISIBLE_DEVICES=0,1`.
 
-The default PopQA config uses the precision-oriented RAG settings below:
+Generated fast configs use these cost-controlled starting settings:
 
 ```yaml
 contract:
-  top_k: 5
-  max_selected_docs: 5
+  top_k: 3
+  max_selected_docs: 3
 runtime:
-  candidate_doc_char_limit: 1200
-  num_audit_candidates: 3
-  audit_batch_size: 2
+  candidate_doc_char_limit: 800
+  num_audit_candidates: 1
+  audit_batch_size: 4
   audit_temperature: 0.7
 training:
-  batch_size: 4
+  batch_size: 8
   large_batch_size: 2
 ```
 
@@ -284,11 +360,11 @@ writes:
 ../rag_assets/outputs*/audits/round_000.jsonl
 ```
 
-If a full PopQA round looks slow, check the progress line and the replay file
+If a full round looks slow, check the progress line and the replay file
 line count before assuming the job is stuck:
 
 ```bash
-wc -l ../rag_assets/outputs/evoco_popqa_policy/replay/round_000.jsonl
+wc -l ../rag_assets/outputs/datasets/popqa_standard_full/replay/round_000.jsonl
 ```
 
 Each round also records stage timing in `metrics/round_xxx.json`:
@@ -308,10 +384,10 @@ a new experiment, edit these fields in the YAML:
 
 ```yaml
 project:
-  output_dir: ../rag_assets/outputs/evoco_popqa_v2
+  output_dir: ../rag_assets/outputs/datasets/popqa_standard_v2
 models:
-  small_lora_dir: ../rag_assets/checkpoints/evoco_popqa_v2/small
-  large_lora_dir: ../rag_assets/checkpoints/evoco_popqa_v2/large
+  small_lora_dir: ../rag_assets/checkpoints/datasets/popqa_standard_v2/small
+  large_lora_dir: ../rag_assets/checkpoints/datasets/popqa_standard_v2/large
 ```
 
 ## 6. Evaluate
@@ -319,22 +395,23 @@ models:
 Evaluate with the latest checkpoint roots from the config:
 
 ```bash
-CUDA_VISIBLE_DEVICES=2,3 python scripts/eval_evoco.py --config configs/evoco_popqa.yaml
+CUDA_VISIBLE_DEVICES=2,3 python scripts/eval_evoco.py \
+  --config configs/local/popqa_standard_full.yaml
 ```
 
 Evaluate explicit adapter rounds:
 
 ```bash
 CUDA_VISIBLE_DEVICES=2,3 python scripts/eval_evoco.py \
-  --config configs/evoco_popqa.yaml \
-  --small_lora ../rag_assets/checkpoints/evoco_popqa/small/round_002 \
-  --large_lora ../rag_assets/checkpoints/evoco_popqa/large/round_002
+  --config configs/local/popqa_standard_full.yaml \
+  --small_lora ../rag_assets/checkpoints/datasets/popqa_standard_full/small/round_002 \
+  --large_lora ../rag_assets/checkpoints/datasets/popqa_standard_full/large/round_002
 ```
 
 Evaluation writes:
 
 ```text
-../rag_assets/outputs/evoco_popqa/metrics/test_eval.json
+../rag_assets/outputs/datasets/popqa_standard_full/metrics/test_eval.json
 ```
 
 Gold answers are used only for offline metrics, not inserted into the generation
@@ -416,19 +493,21 @@ and no-model data pipeline are wired correctly.
 
 ```bash
 python -m pytest -q
-python -m py_compile evoco_rag/*.py evoco_rag/trainers/*.py evoco_rag/evaluation/*.py scripts/*.py run_train.py run_test.py utils.py llm_local_prompt.py
-python scripts/build_seed_replay.py --config configs/debug.yaml
-python scripts/run_ablations.py --config configs/debug.yaml --no_models
+python -m py_compile evoco_rag/*.py evoco_rag/trainers/*.py evoco_rag/evaluation/*.py scripts/*.py run_train.py run_test.py utils.py llm_local_prompt.py tests/*.py
+python scripts/make_dataset_config.py --data-root ../rag_assets/evoco_dataset_pack --all --output-root configs/local
+python scripts/make_dataset_config.py --data-root ../rag_assets/evoco_dataset_pack --dataset-id popqa_standard --debug-size 16 --name evoco_popqa_standard_debug --output configs/local/popqa_standard_debug.yaml --output-dir ../rag_assets/outputs_debug/popqa_standard --checkpoint-root ../rag_assets/checkpoints/debug/popqa_standard
+python scripts/build_seed_replay.py --config configs/local/popqa_standard_debug.yaml
+python scripts/run_ablations.py --config configs/local/popqa_standard_fast.yaml --no_models
 ```
 
 Current local check status:
 
 ```text
 python -m pytest -q
-57 passed, 4 skipped
-python scripts/run_ablations.py --config configs/evoco_popqa_fast.yaml --no_models
+60 passed, 4 skipped
+python scripts/run_ablations.py --config configs/local/popqa_standard_fast.yaml --no_models
 passed
-python scripts/inspect_replay.py --replay ../rag_assets/outputs/evoco_popqa_fast/ablations/evoco_full/replay/round_000.jsonl
+python scripts/inspect_replay.py --replay ../rag_assets/outputs/datasets/popqa_standard_fast/ablations/evoco_full/replay/round_000.jsonl
 passed
 ```
 

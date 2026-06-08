@@ -1,70 +1,178 @@
 # Dataset Packs
 
-EvoCo-RAG keeps datasets outside Git history. A dataset pack can be hosted on
-Google Drive and unpacked next to, or independent from, the code repository.
+EvoCo-RAG keeps datasets outside Git history. The public code repository should
+contain scripts, configs, tests, and documentation only; converted datasets,
+model weights, checkpoints, replay buffers, and metrics outputs belong under a
+local sibling asset directory such as `../rag_assets/`.
 
-## Standard Layout
+## Google Drive Pack
 
-Each dataset uses the same layout as the original EvoCo PopQA release:
+The current multi-dataset pack is hosted on Google Drive:
 
 ```text
-evoco_dataset_pack/
-├── dataset_registry.json
-├── datasets.yaml
-└── datasets/
-    └── <dataset_id>/
-        ├── dataset_meta.json
-        ├── data_v33/Pop/train_labels_list.json
-        └── data/Pop/test.json
+https://drive.google.com/drive/folders/1FdzMIxnotAynWIWZMx5XzATNVCpm43iv
 ```
 
-The training loader only needs:
+The folder contains:
 
-- `data_v33/Pop/train_labels_list.json`
-- `data/Pop/test.json`
+```text
+evoco_dataset_pack.tar.gz
+evoco_dataset_pack.tar.gz.sha256
+UPLOAD_README.md
+```
 
-The `dataset_registry.json` file records dataset ids, display names, relative
-paths, counts, upstream sources, and redistribution notes.
+Expected SHA256:
 
-## Generate a Config
+```text
+803c08ec4626da3f7add8a1c0e1dfc7792bd4997fa2d26c7203a27fe56186d28  evoco_dataset_pack.tar.gz
+```
+
+Download with `gdown`:
+
+```bash
+pip install -U gdown
+mkdir -p ../rag_assets/rag_data
+gdown --folder \
+  "https://drive.google.com/drive/folders/1FdzMIxnotAynWIWZMx5XzATNVCpm43iv" \
+  -O ../rag_assets/rag_data
+```
+
+If `gdown` cannot access the folder, open the Google Drive URL in a browser,
+download the three files manually, and place them in `../rag_assets/rag_data/`.
+
+Verify and unpack:
+
+```bash
+cd ../rag_assets/rag_data
+shasum -a 256 -c evoco_dataset_pack.tar.gz.sha256
+tar -xzf evoco_dataset_pack.tar.gz -C ..
+cd ../../EvoCo-RAG
+```
+
+Expected local layout after extraction:
+
+```text
+../rag_assets/
+├── rag_data/
+│   ├── evoco_dataset_pack.tar.gz
+│   ├── evoco_dataset_pack.tar.gz.sha256
+│   └── UPLOAD_README.md
+└── evoco_dataset_pack/
+    ├── dataset_registry.json
+    ├── datasets.yaml
+    └── datasets/
+        └── <dataset_id>/
+            ├── dataset_meta.json
+            ├── data_v33/Pop/train_labels_list.json
+            └── data/Pop/test.json
+```
+
+## Included Datasets
+
+| Dataset id | Dataset name | Train | Test | Source |
+|---|---|---:|---:|---|
+| `popqa_standard` | `PopQAStandard` | 12,868 | 1,399 | legacy EvoCo PopQA preprocessing |
+| `hotpotqa_distractor` | `HotpotQADistractor` | 90,447 | 7,405 | `hotpotqa/hotpot_qa` distractor |
+| `nq_reader` | `NQReader` | 50,000 | 3,119 | `nlpconnect/dpr-nq-reader-v2` |
+| `asqa_dpr` | `ASQADPR` | 4,353 | 948 | `dormosol/asqa_dpr_pyserini_top100_with_text` |
+| `popqa_retrieval` | `PopQARetrieval` | 11,413 | 2,854 | `MinaGabriel/popqa-retrieval-top20` |
+
+Each converted dataset follows the same schema expected by the current loader:
+
+```text
+train_labels_list.json:
+  question: str
+  answers: list[str]
+  context: list[str]        # each item: "title: ...\ncontext: ..."
+  labels: list[list[str]]   # document-level seed labels/history
+
+test.json:
+  question: str
+  answers: list[str]
+  ctxs: list[dict]          # each dict has title/text and optional metadata
+```
+
+## Generate Configs
 
 List datasets:
 
 ```bash
 python scripts/make_dataset_config.py \
-  --data-root /path/to/evoco_dataset_pack \
+  --data-root ../rag_assets/evoco_dataset_pack \
   --list
 ```
 
-Generate a fast config:
+Generate fast configs for all datasets:
 
 ```bash
 python scripts/make_dataset_config.py \
-  --data-root /path/to/evoco_dataset_pack \
-  --dataset-id hotpotqa_distractor \
-  --output configs/local/hotpotqa_distractor_fast.yaml
+  --data-root ../rag_assets/evoco_dataset_pack \
+  --all \
+  --output-root configs/local
 ```
 
-Run it:
+Generated files:
+
+```text
+configs/local/popqa_standard_fast.yaml
+configs/local/hotpotqa_distractor_fast.yaml
+configs/local/nq_reader_fast.yaml
+configs/local/asqa_dpr_fast.yaml
+configs/local/popqa_retrieval_fast.yaml
+```
+
+Generate full-run configs for all datasets:
+
+```bash
+python scripts/make_dataset_config.py \
+  --data-root ../rag_assets/evoco_dataset_pack \
+  --all \
+  --full \
+  --output-root configs/local
+```
+
+Generate one custom debug config:
+
+```bash
+python scripts/make_dataset_config.py \
+  --data-root ../rag_assets/evoco_dataset_pack \
+  --dataset-id popqa_standard \
+  --debug-size 16 \
+  --name evoco_popqa_standard_debug \
+  --output configs/local/popqa_standard_debug.yaml \
+  --output-dir ../rag_assets/outputs_debug/popqa_standard \
+  --checkpoint-root ../rag_assets/checkpoints/debug/popqa_standard
+```
+
+## Train and Evaluate
+
+Run a fast dataset experiment:
 
 ```bash
 CUDA_VISIBLE_DEVICES=2,3 python scripts/train_evoco.py \
-  --config configs/local/hotpotqa_distractor_fast.yaml
+  --config configs/local/popqa_retrieval_fast.yaml
 ```
 
-Generate a full-run config:
+Resume:
 
 ```bash
-python scripts/make_dataset_config.py \
-  --data-root /path/to/evoco_dataset_pack \
-  --dataset-id hotpotqa_distractor \
-  --full \
-  --output configs/local/hotpotqa_distractor_full.yaml
+CUDA_VISIBLE_DEVICES=2,3 python scripts/train_evoco.py \
+  --config configs/local/popqa_retrieval_fast.yaml \
+  --resume
 ```
 
-## Recommended Policy
+Evaluate:
 
-- Put data packs on Google Drive, Hugging Face Datasets, or another data host.
+```bash
+CUDA_VISIBLE_DEVICES=2,3 python scripts/eval_evoco.py \
+  --config configs/local/popqa_retrieval_fast.yaml
+```
+
+## Repository Policy
+
+- Keep data packs on Google Drive, Hugging Face Datasets, or another data host.
 - Put only scripts, registry examples, and documentation in GitHub.
 - Do not commit raw parquet files, converted JSON files, model weights,
-  checkpoints, replay buffers, or run logs.
+  checkpoints, replay buffers, tarballs, metrics outputs, or run logs.
+- Keep generated dataset configs in `configs/local/`; this directory is ignored
+  by Git.

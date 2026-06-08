@@ -13,6 +13,10 @@ Example:
     --data-root /path/to/evoco_dataset_pack \
     --dataset-id hotpotqa_distractor \
     --output configs/local/hotpotqa_distractor_fast.yaml
+
+  python scripts/make_dataset_config.py \
+    --data-root /path/to/evoco_dataset_pack \
+    --all
 """
 
 from __future__ import annotations
@@ -48,13 +52,25 @@ def find_dataset(registry: dict, dataset_id: str) -> dict:
     raise SystemExit(f"unknown dataset_id={dataset_id!r}. Available: {available}")
 
 
+def format_run_path(template: str | None, dataset_id: str, suffix: str) -> str | None:
+    if template is None:
+        return None
+    return template.format(dataset_id=dataset_id, suffix=suffix)
+
+
 def render_config(args, dataset: dict, train_path: Path, test_path: Path) -> str:
     debug_size = None if args.full else args.debug_size
     num_rounds = args.num_rounds if args.num_rounds is not None else (3 if args.full else 1)
     suffix = "full" if args.full else "fast"
     run_name = args.name or f"evoco_{dataset['id']}_{suffix}"
-    output_dir = args.output_dir or f"../rag_assets/outputs/datasets/{dataset['id']}_{suffix}"
-    checkpoint_root = args.checkpoint_root or f"../rag_assets/checkpoints/datasets/{dataset['id']}_{suffix}"
+    output_dir = (
+        format_run_path(args.output_dir, dataset["id"], suffix)
+        or f"../rag_assets/outputs/datasets/{dataset['id']}_{suffix}"
+    )
+    checkpoint_root = (
+        format_run_path(args.checkpoint_root, dataset["id"], suffix)
+        or f"../rag_assets/checkpoints/datasets/{dataset['id']}_{suffix}"
+    )
 
     return f"""project:
   name: {quote(run_name)}
@@ -132,8 +148,10 @@ def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("--data-root", required=True, help="Path to evoco_dataset_pack.")
     parser.add_argument("--dataset-id", help="Dataset id from dataset_registry.json.")
+    parser.add_argument("--all", action="store_true", help="Generate configs for every dataset in the registry.")
     parser.add_argument("--list", action="store_true", help="List available dataset ids and exit.")
     parser.add_argument("--output", help="Output YAML path.")
+    parser.add_argument("--output-root", default="configs/local", help="Directory used by --all.")
     parser.add_argument("--name", help="Override project.name.")
     parser.add_argument("--full", action="store_true", help="Generate full-run settings: debug_size=null, num_rounds=3.")
     parser.add_argument("--debug-size", type=int, default=512)
@@ -157,24 +175,52 @@ def parse_args():
     return parser.parse_args()
 
 
-def main() -> None:
-    args = parse_args()
-    data_root = Path(args.data_root).expanduser().resolve()
-    registry = load_registry(data_root)
-    if args.list:
-        for item in registry.get("datasets", []):
-            print(f"{item['id']}\t{item.get('train_examples')}\t{item.get('test_examples')}")
-        return
-    if not args.dataset_id:
-        raise SystemExit("--dataset-id is required unless --list is set")
-
-    dataset = find_dataset(registry, args.dataset_id)
+def validate_dataset(data_root: Path, dataset: dict) -> tuple[Path, Path]:
     train_path = data_root / dataset["train_path"]
     test_path = data_root / dataset["test_path"]
     if not train_path.exists():
         raise SystemExit(f"train file not found: {train_path}")
     if not test_path.exists():
         raise SystemExit(f"test file not found: {test_path}")
+    return train_path, test_path
+
+
+def write_config(output: Path, text: str) -> None:
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_text(text, encoding="utf-8")
+    print(output)
+
+
+def main() -> None:
+    args = parse_args()
+    data_root = Path(args.data_root).expanduser().resolve()
+    registry = load_registry(data_root)
+    if args.list:
+        for item in registry.get("datasets", []):
+            print(
+                f"{item['id']}\t"
+                f"{item.get('dataset_name', item['id'])}\t"
+                f"train={item.get('train_examples')}\t"
+                f"test={item.get('test_examples')}"
+            )
+        return
+    if args.all:
+        if args.output:
+            raise SystemExit("--output is for a single dataset. Use --output-root with --all.")
+        if args.name:
+            raise SystemExit("--name is for a single dataset. Omit it when using --all.")
+        suffix = "full" if args.full else "fast"
+        output_root = Path(args.output_root)
+        for dataset in registry.get("datasets", []):
+            train_path, test_path = validate_dataset(data_root, dataset)
+            text = render_config(args, dataset, train_path, test_path)
+            write_config(output_root / f"{dataset['id']}_{suffix}.yaml", text)
+        return
+    if not args.dataset_id:
+        raise SystemExit("--dataset-id is required unless --list or --all is set")
+
+    dataset = find_dataset(registry, args.dataset_id)
+    train_path, test_path = validate_dataset(data_root, dataset)
 
     text = render_config(args, dataset, train_path, test_path)
     if args.output:
@@ -182,9 +228,7 @@ def main() -> None:
     else:
         suffix = "full" if args.full else "fast"
         output = Path("configs") / "local" / f"{dataset['id']}_{suffix}.yaml"
-    output.parent.mkdir(parents=True, exist_ok=True)
-    output.write_text(text, encoding="utf-8")
-    print(output)
+    write_config(output, text)
 
 
 if __name__ == "__main__":

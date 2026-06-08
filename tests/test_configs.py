@@ -4,7 +4,7 @@ from evoco_rag.config import EvoCoConfig
 
 
 def _all_config_paths():
-    return sorted(Path("configs").rglob("*.yaml"))
+    return sorted(path for path in Path("configs").rglob("*.yaml") if "local" not in path.parts)
 
 
 def test_all_yaml_configs_load_and_keep_assets_outside_repo():

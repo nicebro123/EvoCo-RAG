@@ -23,8 +23,8 @@ Keep these outside Git under a sibling asset root:
 
 ```text
 ../rag_assets/
-├── data/
-├── data_v33/
+├── evoco_dataset_pack/
+├── rag_data/
 ├── base_models/
 ├── checkpoints/
 ├── outputs/
@@ -71,33 +71,60 @@ PY
 
 ## Data Download
 
-Download the preprocessed PopQA release:
+Download the current multi-dataset pack from Google Drive:
 
 ```bash
-mkdir -p ../rag_assets
-gh release download data-v0 \
-  --repo nicebro123/EvoCo-RAG \
-  --pattern evoco_popqa_data.tar.gz \
-  --dir /tmp
-tar -xzf /tmp/evoco_popqa_data.tar.gz -C ../rag_assets
+pip install -U gdown
+mkdir -p ../rag_assets/rag_data
+gdown --folder \
+  "https://drive.google.com/drive/folders/1FdzMIxnotAynWIWZMx5XzATNVCpm43iv" \
+  -O ../rag_assets/rag_data
 ```
 
-Alternative without GitHub CLI:
+Verify and unpack:
 
 ```bash
-mkdir -p ../rag_assets
-curl -L \
-  https://github.com/nicebro123/EvoCo-RAG/releases/download/data-v0/evoco_popqa_data.tar.gz \
-  -o /tmp/evoco_popqa_data.tar.gz
-tar -xzf /tmp/evoco_popqa_data.tar.gz -C ../rag_assets
+cd ../rag_assets/rag_data
+shasum -a 256 -c evoco_dataset_pack.tar.gz.sha256
+tar -xzf evoco_dataset_pack.tar.gz -C ..
+cd ../../EvoCo-RAG
 ```
 
-Verify:
+Expected SHA256:
+
+```text
+803c08ec4626da3f7add8a1c0e1dfc7792bd4997fa2d26c7203a27fe56186d28  evoco_dataset_pack.tar.gz
+```
+
+List dataset ids:
 
 ```bash
-test -f ../rag_assets/data_v33/Pop/train_labels_list.json
-test -f ../rag_assets/data/Pop/test.json
+python scripts/make_dataset_config.py \
+  --data-root ../rag_assets/evoco_dataset_pack \
+  --list
 ```
+
+Generate fast configs for every dataset:
+
+```bash
+python scripts/make_dataset_config.py \
+  --data-root ../rag_assets/evoco_dataset_pack \
+  --all \
+  --output-root configs/local
+```
+
+Generate full-run configs for every dataset:
+
+```bash
+python scripts/make_dataset_config.py \
+  --data-root ../rag_assets/evoco_dataset_pack \
+  --all \
+  --full \
+  --output-root configs/local
+```
+
+The dataset-specific generated configs live under `configs/local/`, which is
+ignored by Git.
 
 ## Weight Download
 
@@ -139,32 +166,41 @@ test -d ../rag_assets/base_models/generator/Mistral-Nemo-Instruct-2407
 Use `CUDA_VISIBLE_DEVICES=2,3` when the allocated physical GPUs are 2 and 3.
 PyTorch will see them as logical `cuda:0` and `cuda:1`.
 
-Start with a small smoke run:
+Start with a small generated PopQA smoke run:
 
 ```bash
+python scripts/make_dataset_config.py \
+  --data-root ../rag_assets/evoco_dataset_pack \
+  --dataset-id popqa_standard \
+  --debug-size 16 \
+  --name evoco_popqa_standard_debug \
+  --output configs/local/popqa_standard_debug.yaml \
+  --output-dir ../rag_assets/outputs_debug/popqa_standard \
+  --checkpoint-root ../rag_assets/checkpoints/debug/popqa_standard
+
 CUDA_VISIBLE_DEVICES=2,3 python scripts/train_evoco.py \
-  --config configs/experiments/two_h20_smoke.yaml
+  --config configs/local/popqa_standard_debug.yaml
 ```
 
-Then run the 512-sample fast configuration:
+Then run a 512-sample fast configuration:
 
 ```bash
 CUDA_VISIBLE_DEVICES=2,3 python scripts/train_evoco.py \
-  --config configs/evoco_popqa_fast.yaml
+  --config configs/local/popqa_standard_fast.yaml
 ```
 
-Then run the main policy experiment:
+Then run a full generated configuration:
 
 ```bash
 CUDA_VISIBLE_DEVICES=2,3 python scripts/train_evoco.py \
-  --config configs/experiments/two_h20_main_policy.yaml
+  --config configs/local/popqa_standard_full.yaml
 ```
 
 Resume an interrupted completed-round experiment:
 
 ```bash
 CUDA_VISIBLE_DEVICES=2,3 python scripts/train_evoco.py \
-  --config configs/experiments/two_h20_main_policy.yaml \
+  --config configs/local/popqa_standard_full.yaml \
   --resume
 ```
 
@@ -179,16 +215,16 @@ Evaluate the latest adapters implied by a config:
 
 ```bash
 CUDA_VISIBLE_DEVICES=2,3 python scripts/eval_evoco.py \
-  --config configs/experiments/two_h20_main_policy.yaml
+  --config configs/local/popqa_standard_full.yaml
 ```
 
 Evaluate explicit adapter rounds:
 
 ```bash
 CUDA_VISIBLE_DEVICES=2,3 python scripts/eval_evoco.py \
-  --config configs/experiments/two_h20_main_policy.yaml \
-  --small_lora ../rag_assets/checkpoints/experiments/two_h20_main_policy/small/round_002 \
-  --large_lora ../rag_assets/checkpoints/experiments/two_h20_main_policy/large/round_002
+  --config configs/local/popqa_standard_full.yaml \
+  --small_lora ../rag_assets/checkpoints/datasets/popqa_standard_full/small/round_002 \
+  --large_lora ../rag_assets/checkpoints/datasets/popqa_standard_full/large/round_002
 ```
 
 ## Ablations
@@ -203,14 +239,14 @@ Run all ablations with real models:
 
 ```bash
 CUDA_VISIBLE_DEVICES=2,3 python scripts/run_ablations.py \
-  --config configs/experiments/two_h20_main_policy.yaml
+  --config configs/local/popqa_standard_fast.yaml
 ```
 
 Run selected ablations:
 
 ```bash
 CUDA_VISIBLE_DEVICES=2,3 python scripts/run_ablations.py \
-  --config configs/experiments/two_h20_main_policy.yaml \
+  --config configs/local/popqa_standard_fast.yaml \
   --only evoco_full evoco_no_audit evoco_answer_only_reward
 ```
 
@@ -218,7 +254,7 @@ CPU-safe wiring check:
 
 ```bash
 python scripts/run_ablations.py \
-  --config configs/evoco_popqa_fast.yaml \
+  --config configs/local/popqa_standard_fast.yaml \
   --no_models
 ```
 
@@ -287,15 +323,15 @@ contract.top_k / max_selected_docs
 During training, watch progress:
 
 ```bash
-wc -l ../rag_assets/outputs/experiments/two_h20_main_policy/replay/round_000.jsonl
-tail -n 20 ../rag_assets/outputs/experiments/two_h20_main_policy/metrics/round_000.json
+wc -l ../rag_assets/outputs/datasets/popqa_standard_full/replay/round_000.jsonl
+tail -n 20 ../rag_assets/outputs/datasets/popqa_standard_full/metrics/round_000.json
 ```
 
 Inspect a replay file:
 
 ```bash
 python scripts/inspect_replay.py \
-  --replay ../rag_assets/outputs/experiments/two_h20_main_policy/replay/round_000.jsonl
+  --replay ../rag_assets/outputs/datasets/popqa_standard_full/replay/round_000.jsonl
 ```
 
 Every round records stage timing:
@@ -319,8 +355,9 @@ Run before pushing:
 ```bash
 python -m py_compile evoco_rag/*.py evoco_rag/trainers/*.py evoco_rag/evaluation/*.py scripts/*.py run_train.py run_test.py utils.py llm_local_prompt.py tests/*.py
 python -m pytest -q
-python scripts/run_ablations.py --config configs/evoco_popqa_fast.yaml --no_models
-python scripts/inspect_replay.py --replay ../rag_assets/outputs/evoco_popqa_fast/ablations/evoco_full/replay/round_000.jsonl
+python scripts/make_dataset_config.py --data-root ../rag_assets/evoco_dataset_pack --all --output-root configs/local
+python scripts/run_ablations.py --config configs/local/popqa_standard_fast.yaml --no_models
+python scripts/inspect_replay.py --replay ../rag_assets/outputs/datasets/popqa_standard_fast/ablations/evoco_full/replay/round_000.jsonl
 git diff --check
 git status --short --branch
 ```
@@ -328,7 +365,7 @@ git status --short --branch
 Expected local CPU-safe result at the time of writing:
 
 ```text
-57 passed, 4 skipped
+60 passed, 4 skipped
 ```
 
 The skipped tests are torch-dependent fake-model tests in CPU-only local
