@@ -73,6 +73,32 @@ Start all generated GPU queues in tmux:
 bash ../rag_assets/outputs/experiments/evoco_popqa_fast_sweep_2gpu/launch_tmux.sh
 ```
 
+Recommended bash entrypoint:
+
+```bash
+bash scripts/launch_tmux.sh
+```
+
+Use a different spec:
+
+```bash
+bash scripts/launch_tmux.sh configs/experiments/multidataset_fast_2gpu.yaml
+```
+
+Generate configs and scripts without starting tmux:
+
+```bash
+bash scripts/launch_tmux.sh --dry-run
+```
+
+Equivalent Python entrypoint:
+
+```bash
+python scripts/launch_experiments.py \
+  --spec configs/experiments/popqa_fast_sweep_2gpu.yaml \
+  --launch-tmux
+```
+
 Set `eval_after_train: false` at the spec or experiment level only when you want
 training-only runs. In that case the completion marker becomes
 `metrics/round_000.json`.

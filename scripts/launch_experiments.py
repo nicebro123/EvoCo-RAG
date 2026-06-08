@@ -10,8 +10,8 @@ This mirrors the SpecFlow-style workflow:
 * write a ``launch_manifest.yaml`` plus per-GPU shell scripts;
 * optionally run test-set evaluation immediately after training.
 
-Dry-run is the default. Use ``--launch`` only after inspecting the generated
-commands and configs.
+Dry-run is the default. Use ``--launch`` for foreground sequential execution or
+``--launch-tmux`` to start the generated per-GPU queues in tmux.
 """
 
 from __future__ import annotations
@@ -290,7 +290,7 @@ def shell_command(run: Mapping[str, Any]) -> str:
     return f"mkdir -p {run_dir} && {train_part} && {eval_part}"
 
 
-def write_gpu_scripts(study_dir: Path, runs: list[Mapping[str, Any]]) -> None:
+def write_gpu_scripts(study_dir: Path, runs: list[Mapping[str, Any]]) -> Path:
     by_gpu: dict[str, list[Mapping[str, Any]]] = {}
     for run in runs:
         gpu = "cpu" if run.get("gpu") is None else str(run["gpu"])
@@ -321,13 +321,22 @@ def write_gpu_scripts(study_dir: Path, runs: list[Mapping[str, Any]]) -> None:
         script_path.write_text("\n".join(lines), encoding="utf-8")
         script_path.chmod(0o755)
         session = f"evoco_{study_dir.name}_g{gpu_slug}"[:80]
-        tmux_lines.append(
-            f"tmux new -d -s {shlex.quote(session)} {shlex.quote('bash ' + str(script_path))}"
+        quoted_session = shlex.quote(session)
+        tmux_lines.extend(
+            [
+                f"if tmux has-session -t {quoted_session} 2>/dev/null; then",
+                f"  echo 'tmux session already exists: {session}'",
+                "else",
+                f"  tmux new -d -s {quoted_session} {shlex.quote('bash ' + str(script_path))}",
+                "fi",
+                "",
+            ]
         )
 
     tmux_path = study_dir / "launch_tmux.sh"
     tmux_path.write_text("\n".join(tmux_lines) + "\n", encoding="utf-8")
     tmux_path.chmod(0o755)
+    return tmux_path
 
 
 def print_run(run: Mapping[str, Any]) -> None:
@@ -381,13 +390,28 @@ def launch_run(run: Mapping[str, Any]) -> int:
     return stream_command(run["eval_command"], run["eval_log_path"], env)
 
 
+def launch_tmux(tmux_path: Path) -> None:
+    subprocess.run(["bash", str(tmux_path)], check=True)
+    print(f"Started tmux queues with: bash {tmux_path}")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--spec", required=True, help="YAML experiment spec.")
     parser.add_argument("--launch", action="store_true", help="Actually run experiments sequentially.")
+    parser.add_argument(
+        "--launch-tmux",
+        "--tmux",
+        action="store_true",
+        help="Generate scripts and start all per-GPU queues with bash launch_tmux.sh.",
+    )
     parser.add_argument("--overwrite", action="store_true", help="Do not skip existing run directories.")
     parser.add_argument("--no-gpu-scripts", action="store_true", help="Do not write run_gpu*.sh scripts.")
     args = parser.parse_args()
+    if args.launch and args.launch_tmux:
+        parser.error("--launch and --launch-tmux are mutually exclusive")
+    if args.launch_tmux and args.no_gpu_scripts:
+        parser.error("--launch-tmux requires GPU scripts; remove --no-gpu-scripts")
 
     spec_path = Path(args.spec).resolve()
     spec = read_yaml(spec_path)
@@ -403,8 +427,13 @@ def main() -> None:
         write_yaml(run["config_path"], run["config"])
         print_run(run)
     write_manifest(study_dir, runs, spec_path)
+    tmux_path = study_dir / "launch_tmux.sh"
     if not args.no_gpu_scripts:
-        write_gpu_scripts(study_dir, runs)
+        tmux_path = write_gpu_scripts(study_dir, runs)
+
+    if args.launch_tmux:
+        launch_tmux(tmux_path)
+        return
 
     if not args.launch:
         print(f"Dry run complete. Study directory: {study_dir}")
@@ -412,6 +441,7 @@ def main() -> None:
         if not args.no_gpu_scripts:
             print(f"Per-GPU scripts: {study_dir}/run_gpu*.sh")
             print(f"Tmux launcher: {study_dir}/launch_tmux.sh")
+            print(f"Use --launch-tmux to start tmux queues directly.")
         return
 
     failures = []

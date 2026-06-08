@@ -1,3 +1,4 @@
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -79,6 +80,7 @@ def test_launch_experiments_dry_run_materializes_configs(tmp_path):
     second = yaml.safe_load((study_dir / "01_top5_s7_g0_1" / "run_config.yaml").read_text(encoding="utf-8"))
     manifest = yaml.safe_load((study_dir / "launch_manifest.yaml").read_text(encoding="utf-8"))
     gpu_script = (study_dir / "run_gpu0_1.sh").read_text(encoding="utf-8")
+    tmux_script = (study_dir / "launch_tmux.sh").read_text(encoding="utf-8")
 
     assert "Dry run complete" in result.stdout
     assert "scripts/eval_evoco.py" in result.stdout
@@ -98,6 +100,110 @@ def test_launch_experiments_dry_run_materializes_configs(tmp_path):
     assert "metrics/test_eval.json" in gpu_script
     assert "eval.log" in gpu_script
     assert "train complete marker found" in gpu_script
+    assert "tmux has-session" in tmux_script
+    assert (study_dir / "launch_tmux.sh").exists()
+
+
+def test_launch_experiments_launch_tmux_invokes_generated_launcher(tmp_path):
+    base_config = tmp_path / "base.yaml"
+    output_root = tmp_path / "outputs"
+    checkpoint_root = tmp_path / "checkpoints"
+    spec = tmp_path / "spec.yaml"
+    fake_bin = tmp_path / "bin"
+    bash_calls = tmp_path / "bash_calls.txt"
+    fake_bin.mkdir()
+    fake_bash = fake_bin / "bash"
+    fake_bash.write_text(
+        f"""#!/usr/bin/env python3
+import sys
+from pathlib import Path
+
+Path({str(bash_calls)!r}).write_text("\\n".join(sys.argv[1:]), encoding="utf-8")
+print("fake bash invoked " + " ".join(sys.argv[1:]))
+""",
+        encoding="utf-8",
+    )
+    fake_bash.chmod(0o755)
+    _write_base_config(base_config)
+    spec.write_text(
+        yaml.safe_dump(
+            {
+                "study_name": "tmux_study",
+                "output_root": str(output_root),
+                "checkpoint_root": str(checkpoint_root),
+                "base_config": str(base_config),
+                "defaults": {"gpu": "0", "seed": 7},
+                "experiments": [{"name": "one"}],
+            },
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+
+    env = {
+        **os.environ,
+        "PATH": f"{fake_bin}{os.pathsep}{os.environ.get('PATH', '')}",
+    }
+    result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/launch_experiments.py",
+            "--spec",
+            str(spec),
+            "--launch-tmux",
+        ],
+        check=True,
+        text=True,
+        capture_output=True,
+        env=env,
+    )
+
+    study_dir = output_root / "tmux_study"
+    assert "Started tmux queues with: bash" in result.stdout
+    assert "fake bash invoked" in result.stdout
+    assert bash_calls.read_text(encoding="utf-8") == str(study_dir / "launch_tmux.sh")
+    assert (study_dir / "run_gpu0.sh").exists()
+    assert (study_dir / "launch_tmux.sh").exists()
+
+
+def test_launch_tmux_sh_dry_run_forwards_to_launcher(tmp_path):
+    base_config = tmp_path / "base.yaml"
+    output_root = tmp_path / "outputs"
+    checkpoint_root = tmp_path / "checkpoints"
+    spec = tmp_path / "spec.yaml"
+    _write_base_config(base_config)
+    spec.write_text(
+        yaml.safe_dump(
+            {
+                "study_name": "bash_entry",
+                "output_root": str(output_root),
+                "checkpoint_root": str(checkpoint_root),
+                "base_config": str(base_config),
+                "defaults": {"gpu": "0", "seed": 7},
+                "experiments": [{"name": "one"}],
+            },
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(
+        [
+            "bash",
+            "scripts/launch_tmux.sh",
+            "--spec",
+            str(spec),
+            "--dry-run",
+        ],
+        check=True,
+        text=True,
+        capture_output=True,
+    )
+
+    study_dir = output_root / "bash_entry"
+    assert "mode: dry run" in result.stdout
+    assert "Dry run complete" in result.stdout
+    assert (study_dir / "00_one_s7_g0" / "run_config.yaml").exists()
     assert (study_dir / "launch_tmux.sh").exists()
 
 

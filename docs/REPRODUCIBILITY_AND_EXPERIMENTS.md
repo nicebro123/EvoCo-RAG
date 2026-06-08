@@ -216,6 +216,32 @@ script, or the generated tmux launcher:
 bash ../rag_assets/outputs/experiments/evoco_popqa_fast_sweep_2gpu/launch_tmux.sh
 ```
 
+Recommended one-step bash command:
+
+```bash
+bash scripts/launch_tmux.sh
+```
+
+Use a different experiment spec:
+
+```bash
+bash scripts/launch_tmux.sh configs/experiments/multidataset_fast_2gpu.yaml
+```
+
+Generate configs and scripts without starting tmux:
+
+```bash
+bash scripts/launch_tmux.sh --dry-run
+```
+
+Equivalent Python command:
+
+```bash
+python scripts/launch_experiments.py \
+  --spec configs/experiments/popqa_fast_sweep_2gpu.yaml \
+  --launch-tmux
+```
+
 Each completed run writes `train.log`, `eval.log`, and
 `metrics/test_eval.json`. The generated GPU queue scripts use
 `metrics/test_eval.json` as the default completion marker. If the final training
@@ -393,7 +419,7 @@ git status --short --branch
 Expected local CPU-safe result at the time of writing:
 
 ```text
-65 passed, 4 skipped
+67 passed, 4 skipped
 ```
 
 The skipped tests are torch-dependent fake-model tests in CPU-only local

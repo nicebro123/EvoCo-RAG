@@ -333,6 +333,32 @@ For long sweeps, start the generated tmux queues instead:
 bash ../rag_assets/outputs/experiments/evoco_popqa_fast_sweep_2gpu/launch_tmux.sh
 ```
 
+Recommended bash entrypoint:
+
+```bash
+bash scripts/launch_tmux.sh
+```
+
+Use another spec:
+
+```bash
+bash scripts/launch_tmux.sh configs/experiments/multidataset_fast_2gpu.yaml
+```
+
+Generate configs and scripts without starting tmux:
+
+```bash
+bash scripts/launch_tmux.sh --dry-run
+```
+
+Equivalent Python entrypoint:
+
+```bash
+python scripts/launch_experiments.py \
+  --spec configs/experiments/popqa_fast_sweep_2gpu.yaml \
+  --launch-tmux
+```
+
 Each generated run directory contains:
 
 ```text
@@ -555,7 +581,7 @@ Current local check status:
 
 ```text
 python -m pytest -q
-65 passed, 4 skipped
+67 passed, 4 skipped
 python scripts/verify_dataset_pack.py --data-root ../rag_assets/evoco_dataset_pack
 passed
 python scripts/run_ablations.py --config configs/local/popqa_standard_fast.yaml --no_models
