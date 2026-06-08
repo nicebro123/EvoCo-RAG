@@ -199,6 +199,17 @@ CUDA_VISIBLE_DEVICES=2,3 python scripts/train_evoco.py \
   --config configs/local/popqa_standard_full.yaml
 ```
 
+For repeated experiments, prefer the launcher over copying whole YAML files:
+
+```bash
+python scripts/launch_experiments.py \
+  --spec configs/experiments/popqa_fast_sweep_2gpu.yaml
+```
+
+The dry run writes per-run configs and commands under
+`../rag_assets/outputs/experiments/<study_name>/`. After inspection, use
+`--launch` or the generated `run_gpu*.sh` script.
+
 Resume an interrupted completed-round experiment:
 
 ```bash
@@ -360,6 +371,7 @@ python -m py_compile evoco_rag/*.py evoco_rag/trainers/*.py evoco_rag/evaluation
 python -m pytest -q
 python scripts/verify_dataset_pack.py --data-root ../rag_assets/evoco_dataset_pack
 python scripts/make_dataset_config.py --data-root ../rag_assets/evoco_dataset_pack --all --output-root configs/local
+python scripts/launch_experiments.py --spec configs/experiments/popqa_fast_sweep_2gpu.yaml --no-gpu-scripts
 python scripts/run_ablations.py --config configs/local/popqa_standard_fast.yaml --no_models
 python scripts/inspect_replay.py --replay ../rag_assets/outputs/datasets/popqa_standard_fast/ablations/evoco_full/replay/round_000.jsonl
 git diff --check
@@ -369,7 +381,7 @@ git status --short --branch
 Expected local CPU-safe result at the time of writing:
 
 ```text
-62 passed, 4 skipped
+63 passed, 4 skipped
 ```
 
 The skipped tests are torch-dependent fake-model tests in CPU-only local

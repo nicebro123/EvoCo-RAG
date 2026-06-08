@@ -1,0 +1,36 @@
+# Run the same fast EvoCo-RAG setting on every converted dataset.
+#
+# Generate local dataset configs first:
+#   python scripts/make_dataset_config.py --data-root ../rag_assets/evoco_dataset_pack --all --output-root configs/local
+#
+# Dry run:
+#   python scripts/launch_experiments.py --spec configs/experiments/multidataset_fast_2gpu.yaml
+
+study_name: evoco_multidataset_fast_2gpu
+output_root: ../rag_assets/outputs/experiments
+checkpoint_root: ../rag_assets/checkpoints/experiments
+
+defaults:
+  gpu: "2,3"
+  seed: 42
+
+experiments:
+  - name: popqa_standard
+    dataset_id: popqa_standard
+    config: configs/local/popqa_standard_fast.yaml
+
+  - name: hotpotqa_distractor
+    dataset_id: hotpotqa_distractor
+    config: configs/local/hotpotqa_distractor_fast.yaml
+
+  - name: nq_reader
+    dataset_id: nq_reader
+    config: configs/local/nq_reader_fast.yaml
+
+  - name: asqa_dpr
+    dataset_id: asqa_dpr
+    config: configs/local/asqa_dpr_fast.yaml
+
+  - name: popqa_retrieval
+    dataset_id: popqa_retrieval
+    config: configs/local/popqa_retrieval_fast.yaml

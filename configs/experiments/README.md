@@ -1,11 +1,81 @@
 # Experiment Configs
 
-These YAML files are full standalone configs. The loader does not implement
-inheritance, so each file explicitly sets data paths, model paths, output paths,
-training hyperparameters, runtime knobs, and ablation flags.
+This directory contains two experiment styles:
+
+- Standalone training configs: complete EvoCo-RAG configs passed directly to
+  `scripts/train_evoco.py`.
+- Launcher specs: compact SpecFlow-style study files with `base_config`,
+  `defaults`, and `experiments`. These are expanded by
+  `scripts/launch_experiments.py` into immutable per-run `run_config.yaml`
+  files.
 
 All data, weights, checkpoints, and generated outputs stay outside the Git repo
 under `../rag_assets/`.
+
+## Launcher Workflow
+
+Generate local dataset configs first:
+
+```bash
+python scripts/make_dataset_config.py \
+  --data-root ../rag_assets/evoco_dataset_pack \
+  --all \
+  --output-root configs/local
+```
+
+Dry-run a study. This writes per-run configs, a manifest, and per-GPU shell
+scripts without starting training:
+
+```bash
+python scripts/launch_experiments.py \
+  --spec configs/experiments/popqa_fast_sweep_2gpu.yaml
+```
+
+Inspect the generated files under:
+
+```text
+../rag_assets/outputs/experiments/<study_name>/
+├── launch_manifest.yaml
+├── launch_tmux.sh
+├── run_gpu2_3.sh
+└── <run_name>/run_config.yaml
+```
+
+Launch sequentially in the current process:
+
+```bash
+python scripts/launch_experiments.py \
+  --spec configs/experiments/popqa_fast_sweep_2gpu.yaml \
+  --launch
+```
+
+Or launch the generated per-GPU script:
+
+```bash
+bash ../rag_assets/outputs/experiments/evoco_popqa_fast_sweep_2gpu/run_gpu2_3.sh
+```
+
+The launcher automatically sets unique per-run paths:
+
+```yaml
+project.output_dir: <output_root>/<study_name>/<run_name>
+models.small_lora_dir: <checkpoint_root>/<study_name>/<run_name>/small
+models.large_lora_dir: <checkpoint_root>/<study_name>/<run_name>/large
+```
+
+Use dotted-key overrides in a launcher spec:
+
+```yaml
+experiments:
+  - name: precision_top8
+    gpu: "2,3"
+    overrides:
+      contract.top_k: 8
+      contract.max_selected_docs: 8
+      runtime.num_audit_candidates: 5
+```
+
+## Standalone Configs
 
 | Config | Purpose | Start command |
 |---|---|---|

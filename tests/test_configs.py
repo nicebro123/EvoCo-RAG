@@ -1,10 +1,21 @@
 from pathlib import Path
 
+import yaml
+
 from evoco_rag.config import EvoCoConfig
 
 
+def _is_launch_spec(path: Path) -> bool:
+    raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    return isinstance(raw, dict) and isinstance(raw.get("experiments"), list)
+
+
 def _all_config_paths():
-    return sorted(path for path in Path("configs").rglob("*.yaml") if "local" not in path.parts)
+    return sorted(
+        path
+        for path in Path("configs").rglob("*.yaml")
+        if "local" not in path.parts and not _is_launch_spec(path)
+    )
 
 
 def test_all_yaml_configs_load_and_keep_assets_outside_repo():

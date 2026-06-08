@@ -308,6 +308,30 @@ CUDA_VISIBLE_DEVICES=2,3 python scripts/train_evoco.py \
   --config configs/local/popqa_standard_full.yaml
 ```
 
+For experiment batches, use the SpecFlow-style launcher. It expands a compact
+study spec into per-run configs with isolated output/checkpoint paths:
+
+```bash
+python scripts/launch_experiments.py \
+  --spec configs/experiments/popqa_fast_sweep_2gpu.yaml
+```
+
+After inspecting the generated `run_config.yaml` files and commands, launch
+sequentially:
+
+```bash
+python scripts/launch_experiments.py \
+  --spec configs/experiments/popqa_fast_sweep_2gpu.yaml \
+  --launch
+```
+
+Run the same fast setting across all converted datasets:
+
+```bash
+python scripts/launch_experiments.py \
+  --spec configs/experiments/multidataset_fast_2gpu.yaml
+```
+
 Resume from the latest completed round:
 
 ```bash
@@ -499,6 +523,7 @@ python -m pytest -q
 python -m py_compile evoco_rag/*.py evoco_rag/trainers/*.py evoco_rag/evaluation/*.py scripts/*.py run_train.py run_test.py utils.py llm_local_prompt.py tests/*.py
 python scripts/verify_dataset_pack.py --data-root ../rag_assets/evoco_dataset_pack
 python scripts/make_dataset_config.py --data-root ../rag_assets/evoco_dataset_pack --all --output-root configs/local
+python scripts/launch_experiments.py --spec configs/experiments/popqa_fast_sweep_2gpu.yaml --no-gpu-scripts
 python scripts/make_dataset_config.py --data-root ../rag_assets/evoco_dataset_pack --dataset-id popqa_standard --debug-size 16 --name evoco_popqa_standard_debug --output configs/local/popqa_standard_debug.yaml --output-dir ../rag_assets/outputs_debug/popqa_standard --checkpoint-root ../rag_assets/checkpoints/debug/popqa_standard
 python scripts/build_seed_replay.py --config configs/local/popqa_standard_debug.yaml
 python scripts/run_ablations.py --config configs/local/popqa_standard_fast.yaml --no_models
@@ -508,7 +533,7 @@ Current local check status:
 
 ```text
 python -m pytest -q
-62 passed, 4 skipped
+63 passed, 4 skipped
 python scripts/verify_dataset_pack.py --data-root ../rag_assets/evoco_dataset_pack
 passed
 python scripts/run_ablations.py --config configs/local/popqa_standard_fast.yaml --no_models
