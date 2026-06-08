@@ -7,7 +7,8 @@ This mirrors the SpecFlow-style workflow:
 * keep a base config stable;
 * describe each run with dotted-key overrides;
 * materialize an immutable ``run_config.yaml`` per run;
-* write a ``launch_manifest.yaml`` plus per-GPU shell scripts.
+* write a ``launch_manifest.yaml`` plus per-GPU shell scripts;
+* optionally run test-set evaluation immediately after training.
 
 Dry-run is the default. Use ``--launch`` only after inspecting the generated
 commands and configs.
@@ -28,13 +29,7 @@ import yaml
 
 
 DEFAULT_TRAIN_SCRIPT = "scripts/train_evoco.py"
-RUN_ARTIFACTS = (
-    "used_config.yaml",
-    "train.log",
-    "metrics/round_000.json",
-    "replay/round_000.jsonl",
-    "ablations/summary.json",
-)
+DEFAULT_EVAL_SCRIPT = "scripts/eval_evoco.py"
 
 
 def read_yaml(path: Path) -> dict[str, Any]:
@@ -138,8 +133,20 @@ def resolve_study_dir(spec: Mapping[str, Any], spec_path: Path) -> Path:
     return root / slug(str(study_name))
 
 
-def has_run_artifacts(run_dir: Path) -> bool:
-    return any((run_dir / artifact).exists() for artifact in RUN_ARTIFACTS)
+def final_round_index(config: Mapping[str, Any]) -> int:
+    training = config.get("training", {})
+    if not isinstance(training, Mapping):
+        return 0
+    num_rounds = int(training.get("num_rounds", 1) or 1)
+    return max(num_rounds - 1, 0)
+
+
+def train_marker_path(run_dir: Path, config: Mapping[str, Any]) -> Path:
+    return run_dir / "metrics" / f"round_{final_round_index(config):03d}.json"
+
+
+def eval_marker_path(run_dir: Path) -> Path:
+    return run_dir / "metrics" / "test_eval.json"
 
 
 def build_run(
@@ -185,7 +192,17 @@ def build_run(
 
     config_path = run_dir / "run_config.yaml"
     log_path = run_dir / "train.log"
-    status = "exists" if run_dir.exists() and has_run_artifacts(run_dir) and not overwrite else "ready"
+    eval_log_path = run_dir / "eval.log"
+    eval_after_train = bool(experiment.get("eval_after_train", spec.get("eval_after_train", True)))
+    train_marker = train_marker_path(run_dir, config)
+    completion_marker = eval_marker_path(run_dir) if eval_after_train else train_marker
+    status = (
+        "exists"
+        if run_dir.exists()
+        and completion_marker.exists()
+        and not overwrite
+        else "ready"
+    )
 
     python_executable = str(experiment.get("python", spec.get("python", "python")))
     train_script = str(experiment.get("train_script", spec.get("train_script", DEFAULT_TRAIN_SCRIPT)))
@@ -195,18 +212,29 @@ def build_run(
     if experiment.get("resume", spec.get("resume", False)):
         command.append("--resume")
 
+    eval_script = str(experiment.get("eval_script", spec.get("eval_script", DEFAULT_EVAL_SCRIPT)))
+    eval_command = [python_executable, eval_script, "--config", str(config_path)]
+    for extra in experiment.get("eval_extra_args", spec.get("eval_extra_args", [])) or []:
+        eval_command.append(str(extra))
+
     return {
         "index": index,
         "name": experiment["name"],
         "gpu": experiment.get("gpu"),
         "status": status,
+        "eval_after_train": eval_after_train,
+        "overwrite": overwrite,
         "base_config": str(base_config_path),
         "run_dir": run_dir,
         "config_path": config_path,
         "log_path": log_path,
+        "eval_log_path": eval_log_path,
+        "train_marker_path": train_marker,
+        "completion_marker_path": completion_marker,
         "checkpoint_dir": checkpoint_dir,
         "config": config,
         "command": command,
+        "eval_command": eval_command,
         "overrides": overrides,
     }
 
@@ -221,11 +249,17 @@ def write_manifest(study_dir: Path, runs: list[Mapping[str, Any]], spec_path: Pa
                 "name": run["name"],
                 "gpu": run["gpu"],
                 "status": run["status"],
+                "eval_after_train": run["eval_after_train"],
                 "base_config": run["base_config"],
                 "run_dir": str(run["run_dir"]),
                 "config_path": str(run["config_path"]),
                 "log_path": str(run["log_path"]),
+                "eval_log_path": str(run["eval_log_path"]),
+                "train_marker_path": str(run["train_marker_path"]),
+                "completion_marker_path": str(run["completion_marker_path"]),
                 "checkpoint_dir": str(run["checkpoint_dir"]),
+                "command": run["command"],
+                "eval_command": run["eval_command"] if run["eval_after_train"] else None,
                 "overrides": run["overrides"],
             }
             for run in runs
@@ -235,15 +269,25 @@ def write_manifest(study_dir: Path, runs: list[Mapping[str, Any]], spec_path: Pa
 
 
 def shell_command(run: Mapping[str, Any]) -> str:
-    command = quote_command(run["command"])
+    train_command = quote_command(run["command"])
+    eval_command = quote_command(run["eval_command"])
     run_dir = shlex.quote(str(run["run_dir"]))
     log_path = shlex.quote(str(run["log_path"]))
+    eval_log_path = shlex.quote(str(run["eval_log_path"]))
+    train_marker = shlex.quote(str(run["train_marker_path"]))
     env_prefix = (
         f"CUDA_VISIBLE_DEVICES={shlex.quote(str(run['gpu']))} "
         if run.get("gpu") is not None
         else ""
     )
-    return f"mkdir -p {run_dir} && {env_prefix}{command} 2>&1 | tee {log_path}"
+    train_part = f"{env_prefix}{train_command} 2>&1 | tee {log_path}"
+    if not run.get("eval_after_train"):
+        return f"mkdir -p {run_dir} && {train_part}"
+    eval_part = f"{env_prefix}{eval_command} 2>&1 | tee {eval_log_path}"
+    if not run.get("overwrite"):
+        eval_only_part = f"echo 'train complete marker found; running eval only' && {eval_part}"
+        return f"mkdir -p {run_dir} && if [ -f {train_marker} ]; then {eval_only_part}; else {train_part} && {eval_part}; fi"
+    return f"mkdir -p {run_dir} && {train_part} && {eval_part}"
 
 
 def write_gpu_scripts(study_dir: Path, runs: list[Mapping[str, Any]]) -> None:
@@ -263,7 +307,7 @@ def write_gpu_scripts(study_dir: Path, runs: list[Mapping[str, Any]]) -> None:
             "",
         ]
         for run in gpu_runs:
-            complete_marker = shlex.quote(str(run["run_dir"] / "metrics" / "round_000.json"))
+            complete_marker = shlex.quote(str(run["completion_marker_path"]))
             failure_note = f"echo '[{run['index']:02d}] FAILED: {run['run_dir']}'"
             lines.extend(
                 [
@@ -293,7 +337,26 @@ def print_run(run: Mapping[str, Any]) -> None:
     print(f"     config: {run['config_path']}")
     print(f"     checkpoint_dir: {run['checkpoint_dir']}")
     print(f"     command: {env_prefix}{quote_command(run['command'])}")
+    if run.get("eval_after_train"):
+        print(f"     eval: {env_prefix}{quote_command(run['eval_command'])}")
     print(f"     shell: {shell_command(run)}")
+
+
+def stream_command(command: list[str], log_path: Path, env: Mapping[str, str]) -> int:
+    with log_path.open("w", encoding="utf-8") as log:
+        process = subprocess.Popen(
+            command,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            env=dict(env),
+        )
+        assert process.stdout is not None
+        for line in process.stdout:
+            print(line, end="")
+            log.write(line)
+            log.flush()
+        return process.wait()
 
 
 def launch_run(run: Mapping[str, Any]) -> int:
@@ -307,20 +370,15 @@ def launch_run(run: Mapping[str, Any]) -> int:
     env = os.environ.copy()
     if run.get("gpu") is not None:
         env["CUDA_VISIBLE_DEVICES"] = str(run["gpu"])
-    with run["log_path"].open("w", encoding="utf-8") as log:
-        process = subprocess.Popen(
-            run["command"],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True,
-            env=env,
-        )
-        assert process.stdout is not None
-        for line in process.stdout:
-            print(line, end="")
-            log.write(line)
-            log.flush()
-        return process.wait()
+    train_done = Path(run["train_marker_path"]).exists()
+    if train_done and run.get("eval_after_train") and not run.get("overwrite"):
+        print(f"SKIP training; found train marker: {run['train_marker_path']}")
+        train_code = 0
+    else:
+        train_code = stream_command(run["command"], run["log_path"], env)
+    if train_code != 0 or not run.get("eval_after_train"):
+        return train_code
+    return stream_command(run["eval_command"], run["eval_log_path"], env)
 
 
 def main() -> None:

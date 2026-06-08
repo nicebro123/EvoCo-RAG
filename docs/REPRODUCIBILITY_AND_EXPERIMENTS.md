@@ -207,8 +207,20 @@ python scripts/launch_experiments.py \
 ```
 
 The dry run writes per-run configs and commands under
-`../rag_assets/outputs/experiments/<study_name>/`. After inspection, use
-`--launch` or the generated `run_gpu*.sh` script.
+`../rag_assets/outputs/experiments/<study_name>/`. Every generated command uses
+the same per-run `run_config.yaml` for training and post-training test
+evaluation. After inspection, use `--launch`, the generated `run_gpu*.sh`
+script, or the generated tmux launcher:
+
+```bash
+bash ../rag_assets/outputs/experiments/evoco_popqa_fast_sweep_2gpu/launch_tmux.sh
+```
+
+Each completed run writes `train.log`, `eval.log`, and
+`metrics/test_eval.json`. The generated GPU queue scripts use
+`metrics/test_eval.json` as the default completion marker. If the final training
+round marker exists but evaluation is missing, the launcher runs evaluation only
+instead of retraining into existing checkpoints.
 
 Resume an interrupted completed-round experiment:
 
@@ -381,7 +393,7 @@ git status --short --branch
 Expected local CPU-safe result at the time of writing:
 
 ```text
-63 passed, 4 skipped
+65 passed, 4 skipped
 ```
 
 The skipped tests are torch-dependent fake-model tests in CPU-only local

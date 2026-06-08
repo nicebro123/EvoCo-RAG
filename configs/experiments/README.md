@@ -24,7 +24,8 @@ python scripts/make_dataset_config.py \
 ```
 
 Dry-run a study. This writes per-run configs, a manifest, and per-GPU shell
-scripts without starting training:
+scripts without starting training. By default, every generated command trains
+first and then evaluates the same generated config on the test split:
 
 ```bash
 python scripts/launch_experiments.py \
@@ -38,8 +39,19 @@ Inspect the generated files under:
 ├── launch_manifest.yaml
 ├── launch_tmux.sh
 ├── run_gpu2_3.sh
-└── <run_name>/run_config.yaml
+└── <run_name>/
+    ├── run_config.yaml
+    ├── train.log
+    ├── eval.log
+    └── metrics/test_eval.json
 ```
+
+`metrics/test_eval.json` is the completion marker when post-training evaluation
+is enabled. If a run already has that file, the generated GPU queue skips it
+unless you pass `--overwrite`.
+If the final training marker already exists but `metrics/test_eval.json` is
+missing, the launcher runs evaluation only instead of retraining into existing
+checkpoints.
 
 Launch sequentially in the current process:
 
@@ -54,6 +66,16 @@ Or launch the generated per-GPU script:
 ```bash
 bash ../rag_assets/outputs/experiments/evoco_popqa_fast_sweep_2gpu/run_gpu2_3.sh
 ```
+
+Start all generated GPU queues in tmux:
+
+```bash
+bash ../rag_assets/outputs/experiments/evoco_popqa_fast_sweep_2gpu/launch_tmux.sh
+```
+
+Set `eval_after_train: false` at the spec or experiment level only when you want
+training-only runs. In that case the completion marker becomes
+`metrics/round_000.json`.
 
 The launcher automatically sets unique per-run paths:
 

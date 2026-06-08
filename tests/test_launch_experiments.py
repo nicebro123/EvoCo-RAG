@@ -78,8 +78,10 @@ def test_launch_experiments_dry_run_materializes_configs(tmp_path):
     first = yaml.safe_load((study_dir / "00_base_run_s7_g0_1" / "run_config.yaml").read_text(encoding="utf-8"))
     second = yaml.safe_load((study_dir / "01_top5_s7_g0_1" / "run_config.yaml").read_text(encoding="utf-8"))
     manifest = yaml.safe_load((study_dir / "launch_manifest.yaml").read_text(encoding="utf-8"))
+    gpu_script = (study_dir / "run_gpu0_1.sh").read_text(encoding="utf-8")
 
     assert "Dry run complete" in result.stdout
+    assert "scripts/eval_evoco.py" in result.stdout
     assert first["project"]["name"] == "00_base_run_s7_g0_1"
     assert first["project"]["seed"] == 7
     assert first["project"]["output_dir"] == str(study_dir / "00_base_run_s7_g0_1")
@@ -87,5 +89,171 @@ def test_launch_experiments_dry_run_materializes_configs(tmp_path):
     assert second["contract"]["top_k"] == 5
     assert second["runtime"]["audit_batch_size"] == 2
     assert len(manifest["runs"]) == 2
+    assert manifest["runs"][0]["eval_after_train"] is True
+    assert manifest["runs"][0]["eval_log_path"].endswith("eval.log")
+    assert manifest["runs"][0]["train_marker_path"].endswith("metrics/round_000.json")
+    assert manifest["runs"][0]["completion_marker_path"].endswith("metrics/test_eval.json")
+    assert "scripts/eval_evoco.py" in manifest["runs"][0]["eval_command"]
     assert (study_dir / "run_gpu0_1.sh").exists()
+    assert "metrics/test_eval.json" in gpu_script
+    assert "eval.log" in gpu_script
+    assert "train complete marker found" in gpu_script
     assert (study_dir / "launch_tmux.sh").exists()
+
+
+def test_launch_experiments_launch_runs_eval_after_train(tmp_path):
+    base_config = tmp_path / "base.yaml"
+    output_root = tmp_path / "outputs"
+    checkpoint_root = tmp_path / "checkpoints"
+    train_script = tmp_path / "fake_train.py"
+    eval_script = tmp_path / "fake_eval.py"
+    spec = tmp_path / "spec.yaml"
+    _write_base_config(base_config)
+    train_script.write_text(
+        """
+import argparse
+import json
+from pathlib import Path
+import yaml
+
+ap = argparse.ArgumentParser()
+ap.add_argument('--config', required=True)
+args = ap.parse_args()
+cfg = yaml.safe_load(Path(args.config).read_text(encoding='utf-8'))
+out = Path(cfg['project']['output_dir']) / 'metrics'
+out.mkdir(parents=True, exist_ok=True)
+(out / 'round_000.json').write_text(json.dumps({'trained': True}), encoding='utf-8')
+print('fake train done')
+""",
+        encoding="utf-8",
+    )
+    eval_script.write_text(
+        """
+import argparse
+import json
+from pathlib import Path
+import yaml
+
+ap = argparse.ArgumentParser()
+ap.add_argument('--config', required=True)
+args = ap.parse_args()
+cfg = yaml.safe_load(Path(args.config).read_text(encoding='utf-8'))
+out = Path(cfg['project']['output_dir']) / 'metrics'
+out.mkdir(parents=True, exist_ok=True)
+(out / 'test_eval.json').write_text(json.dumps({'accuracy': 1.0}), encoding='utf-8')
+print('fake eval done')
+""",
+        encoding="utf-8",
+    )
+    spec.write_text(
+        yaml.safe_dump(
+            {
+                "study_name": "launch_eval",
+                "output_root": str(output_root),
+                "checkpoint_root": str(checkpoint_root),
+                "base_config": str(base_config),
+                "python": sys.executable,
+                "train_script": str(train_script),
+                "eval_script": str(eval_script),
+                "experiments": [{"name": "one"}],
+            },
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/launch_experiments.py",
+            "--spec",
+            str(spec),
+            "--launch",
+            "--no-gpu-scripts",
+        ],
+        check=True,
+        text=True,
+        capture_output=True,
+    )
+
+    run_dir = output_root / "launch_eval" / "00_one"
+    assert "fake train done" in result.stdout
+    assert "fake eval done" in result.stdout
+    assert (run_dir / "metrics" / "round_000.json").exists()
+    assert (run_dir / "metrics" / "test_eval.json").exists()
+    assert "fake train done" in (run_dir / "train.log").read_text(encoding="utf-8")
+    assert "fake eval done" in (run_dir / "eval.log").read_text(encoding="utf-8")
+
+
+def test_launch_experiments_launch_eval_only_when_training_marker_exists(tmp_path):
+    base_config = tmp_path / "base.yaml"
+    output_root = tmp_path / "outputs"
+    checkpoint_root = tmp_path / "checkpoints"
+    train_script = tmp_path / "fake_train.py"
+    eval_script = tmp_path / "fake_eval.py"
+    spec = tmp_path / "spec.yaml"
+    _write_base_config(base_config)
+    train_script.write_text(
+        """
+raise SystemExit('fake train should not run')
+""",
+        encoding="utf-8",
+    )
+    eval_script.write_text(
+        """
+import argparse
+import json
+from pathlib import Path
+import yaml
+
+ap = argparse.ArgumentParser()
+ap.add_argument('--config', required=True)
+args = ap.parse_args()
+cfg = yaml.safe_load(Path(args.config).read_text(encoding='utf-8'))
+out = Path(cfg['project']['output_dir']) / 'metrics'
+out.mkdir(parents=True, exist_ok=True)
+(out / 'test_eval.json').write_text(json.dumps({'accuracy': 1.0}), encoding='utf-8')
+print('fake eval done')
+""",
+        encoding="utf-8",
+    )
+    spec.write_text(
+        yaml.safe_dump(
+            {
+                "study_name": "eval_only",
+                "output_root": str(output_root),
+                "checkpoint_root": str(checkpoint_root),
+                "base_config": str(base_config),
+                "python": sys.executable,
+                "train_script": str(train_script),
+                "eval_script": str(eval_script),
+                "experiments": [{"name": "one"}],
+            },
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+    train_marker = output_root / "eval_only" / "00_one" / "metrics" / "round_000.json"
+    train_marker.parent.mkdir(parents=True, exist_ok=True)
+    train_marker.write_text('{"trained": true}', encoding="utf-8")
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/launch_experiments.py",
+            "--spec",
+            str(spec),
+            "--launch",
+            "--no-gpu-scripts",
+        ],
+        check=True,
+        text=True,
+        capture_output=True,
+    )
+
+    run_dir = output_root / "eval_only" / "00_one"
+    assert "SKIP training; found train marker" in result.stdout
+    assert "fake eval done" in result.stdout
+    assert "fake train should not run" not in result.stdout
+    assert (run_dir / "metrics" / "test_eval.json").exists()
+    assert "fake eval done" in (run_dir / "eval.log").read_text(encoding="utf-8")

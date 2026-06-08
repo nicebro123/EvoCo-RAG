@@ -309,7 +309,9 @@ CUDA_VISIBLE_DEVICES=2,3 python scripts/train_evoco.py \
 ```
 
 For experiment batches, use the SpecFlow-style launcher. It expands a compact
-study spec into per-run configs with isolated output/checkpoint paths:
+study spec into per-run configs with isolated output/checkpoint paths. Each run
+trains first and then automatically runs `scripts/eval_evoco.py` with the same
+generated config:
 
 ```bash
 python scripts/launch_experiments.py \
@@ -324,6 +326,25 @@ python scripts/launch_experiments.py \
   --spec configs/experiments/popqa_fast_sweep_2gpu.yaml \
   --launch
 ```
+
+For long sweeps, start the generated tmux queues instead:
+
+```bash
+bash ../rag_assets/outputs/experiments/evoco_popqa_fast_sweep_2gpu/launch_tmux.sh
+```
+
+Each generated run directory contains:
+
+```text
+run_config.yaml
+train.log
+eval.log
+metrics/test_eval.json
+```
+
+`metrics/test_eval.json` is the default completion marker used by the GPU queue
+scripts. If training finished but evaluation was interrupted, the launcher
+detects the final round marker and runs evaluation only.
 
 Run the same fast setting across all converted datasets:
 
@@ -510,8 +531,9 @@ scripts/inspect_replay.py
 ```
 
 Experiment-ready configuration templates live under `configs/experiments/`.
-Use a new `project.output_dir` and new `models.*_lora_dir` for every experiment
-so checkpoints and metrics never overwrite another run.
+For repeated studies, prefer `scripts/launch_experiments.py`; it writes unique
+`project.output_dir` and `models.*_lora_dir` values for every generated run so
+checkpoints and metrics never overwrite another run.
 
 ## 10. Optional Code Checks
 
@@ -533,7 +555,7 @@ Current local check status:
 
 ```text
 python -m pytest -q
-63 passed, 4 skipped
+65 passed, 4 skipped
 python scripts/verify_dataset_pack.py --data-root ../rag_assets/evoco_dataset_pack
 passed
 python scripts/run_ablations.py --config configs/local/popqa_standard_fast.yaml --no_models
