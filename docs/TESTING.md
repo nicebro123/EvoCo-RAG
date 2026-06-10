@@ -140,21 +140,37 @@ python -m pytest -q          # expected: 78 passed
 These cover large-model batched audit generation and the small-model
 evidence/action/confidence heads, which only exist with torch.
 
-**b) Real-model smoke test on small samples** — the true end-to-end integration
-test: confirm the reranker and generator load, audits parse, and a full round
-trains + evaluates. **Always use the 16-sample debug config**, not a big run:
+**b) Real-model runs on small samples are also tests.** The 16- and 512-sample
+runs are *verification*, not the final experiment — they confirm the system
+behaves correctly and the numbers look sane before you pay for a full run. Only
+the **full** run (in [EXPERIMENTS.md](EXPERIMENTS.md)) is the real experiment.
+Treat these as a two-rung GPU test ladder:
+
+| Test rung | Config | What it verifies |
+|---|---|---|
+| **16-sample smoke** | `*_debug.yaml` | models load, audits parse to valid JSON, one full round trains both LoRAs and writes a real-generalization eval — pure wiring/OOM check |
+| **512-sample signal** | `*_fast.yaml` | metrics are sane (accuracy / evidence-support / `wrong_retriever_reward_rate`), losses drop, policy heads train, `ask_auditor` ratio is reasonable, cost is acceptable |
+
+Run them with the same training entrypoint (see
+[EXPERIMENTS.md run ladder](EXPERIMENTS.md#2-run-ladder-debug--fast--full)):
 
 ```bash
+# rung 1 — smoke (seconds–minutes)
 CUDA_VISIBLE_DEVICES=2,3 python scripts/train_evoco.py \
   --config configs/local/popqa_standard_debug.yaml
+
+# rung 2 — signal (minutes)
+CUDA_VISIBLE_DEVICES=2,3 python scripts/train_evoco.py \
+  --config configs/local/popqa_standard_fast.yaml
 ```
 
-A clean smoke run should: load both models, stream `round 0: experience k/16`,
-write `replay/round_000.jsonl`, train both LoRAs, and produce
-`metrics/test_eval_round_000.json` (real generalization). If that passes, scale up
-via the [EXPERIMENTS.md run ladder](EXPERIMENTS.md#2-run-ladder-debug--fast--full).
-Keep `data.eval_size` small (or rely on `debug_size`) so the per-round eval stays
-fast while smoke-testing.
+A clean 16-sample smoke should: load both models, stream `round 0: experience
+k/16`, write `replay/round_000.jsonl`, train both LoRAs, and produce
+`metrics/test_eval_round_000.json` (real generalization). The 512-sample run then
+tells you whether the *results* — not just the plumbing — are reasonable. Inspect
+both with `scripts/inspect_replay.py` and `scripts/plot_trends.py`. Keep
+`data.eval_size` small (or rely on `debug_size`) so per-round eval stays fast
+during these tests. Only after rung 2 looks right do you launch the full run.
 
 ---
 

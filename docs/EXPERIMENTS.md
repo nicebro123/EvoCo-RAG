@@ -66,7 +66,12 @@ big run. Only move up after the smaller rung finishes cleanly.
 |---|---:|---|---|
 | debug | 16 | `16` | smoke-test wiring / a code change |
 | fast | 512 | `512` | get a quick signal / tune knobs / run ablations |
-| full | all | `null` | final numbers |
+| full | all | `null` | final numbers (the real experiment) |
+
+> The **debug** and **fast** rungs are really *GPU tests* — verification that the
+> system runs and the numbers look sane, not the final experiment. They are
+> documented as the GPU test tier in [TESTING.md §5](TESTING.md#5-testing-on-gpu).
+> Only the **full** rung is the experiment you report.
 
 The debug config caps **both** training and per-round generalization eval to 16
 samples (`data.eval_size` falls back to `data.debug_size`), so the smoke run is
