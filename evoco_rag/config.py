@@ -70,6 +70,9 @@ class DataConfig:
     test_path: str = "../rag_assets/data/Pop/test.json"
     dataset_name: str = "Pop"
     debug_size: int | None = None
+    # 每轮训练后做"真实泛化"评估时使用的测试子集大小（None=全量 test）。
+    # 全量 test + 大模型审计每轮很贵，故可在训练循环里截断；最终 eval_evoco 仍用全量。
+    eval_size: int | None = None
 
 
 @dataclass

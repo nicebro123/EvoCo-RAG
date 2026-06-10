@@ -335,10 +335,18 @@ class CoevolutionTrainer:
             flush=True,
         )
 
-        # 评估
+        # 评估：优先"真实泛化"（测试集 + show_gold=False）；训练集教师审计诊断单独留档
         eval_started = time.time()
         if self.evaluator is not None:
-            stats["eval"] = self.evaluator.evaluate(round_id)
+            train_metrics = self.evaluator.evaluate(round_id)
+            gen_metrics = self.evaluator.evaluate_generalization(round_id)
+            if gen_metrics is not None:
+                stats["eval"] = gen_metrics              # 论文口径：真实泛化
+                stats["eval_source"] = "test_generalization"
+                stats["train_metrics"] = train_metrics   # 训练集（含 gold）诊断，仅参考
+            else:
+                stats["eval"] = train_metrics
+                stats["eval_source"] = "train_replay"
         stats["timing"]["evaluation_seconds"] = round(time.time() - eval_started, 4)
         stats["timing"]["total_round_seconds"] = round(time.time() - round_started, 4)
         print(

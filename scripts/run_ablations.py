@@ -20,7 +20,7 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from evoco_rag.config import EvoCoConfig
-from evoco_rag.data import load_train_samples
+from evoco_rag.data import load_test_samples, load_train_samples
 from evoco_rag.evaluation.evaluator import Evaluator
 from evoco_rag.trainers.coevolution_trainer import CoevolutionTrainer
 from evoco_rag.weights import prepare_weight_layout
@@ -81,6 +81,10 @@ def main():
     prepare_weight_layout(base, create=True)
     samples = load_train_samples(base.data.train_path, base.data.dataset_name, base.data.debug_size)
     print(f"loaded {len(samples)} samples")
+    # 真实泛化评估的测试子集（无模型模式下不会用到）
+    eval_cap = base.data.eval_size if base.data.eval_size is not None else base.data.debug_size
+    test_samples = None if args.no_models else load_test_samples(
+        base.data.test_path, base.data.dataset_name, eval_cap)
 
     summary = {}
     for name in names:
@@ -120,7 +124,7 @@ def main():
                 max_completion_length=cfg.runtime.max_completion_length,
                 batch_size=cfg.training.large_batch_size)
 
-        evaluator = Evaluator(cfg, small_policy, large_auditor)
+        evaluator = Evaluator(cfg, small_policy, large_auditor, test_samples=test_samples)
         trainer = CoevolutionTrainer(
             cfg, small_policy, large_auditor,
             small_trainer if cfg.ablation.train_small_lora else None,

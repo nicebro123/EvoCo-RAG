@@ -491,6 +491,45 @@ Evaluation writes:
 Gold answers are used only for offline metrics, not inserted into the generation
 prompt.
 
+### Per-Round Generalization and Trends
+
+Training already evaluates **real generalization** after every round. The trainer
+runs inference on the held-out test set with `show_gold=False` (gold answers are
+never placed in the prompt) and stores the result as `stats["eval"]` with
+`eval_source="test_generalization"`. A training-set teacher-audit diagnostic
+(`show_gold=True`) is kept separately as `stats["train_metrics"]` for reference
+only. Per-round files:
+
+```text
+../rag_assets/outputs*/metrics/test_eval_round_000.json    # real generalization (paper metric)
+../rag_assets/outputs*/metrics/train_eval_round_000.json   # training-set diagnostic (reference only)
+```
+
+Control how many test samples each per-round eval uses with `data.eval_size`
+(running the full test set every round is expensive because each sample needs a
+large-model audit). Final evaluation via `scripts/eval_evoco.py` always uses the
+full test set.
+
+```yaml
+data:
+  eval_size: 256   # null = full test set each round
+```
+
+After a multi-round run, summarize and plot the trends:
+
+```bash
+python scripts/plot_trends.py --config configs/local/popqa_standard_fast.yaml
+```
+
+It reads `metrics/round_*.json` (the real-generalization `stats["eval"]`) and writes:
+
+```text
+../rag_assets/outputs*/metrics/trends.json
+../rag_assets/outputs*/metrics/trends.csv
+../rag_assets/outputs*/metrics/trend_metrics.png    # accuracy / evidence-support / unsupported-answer / ask_auditor ratio
+../rag_assets/outputs*/metrics/trend_training.png   # small/large losses and policy-head accuracy
+```
+
 ## 7. Outputs
 
 Each run writes:
@@ -503,6 +542,10 @@ Each run writes:
 ../rag_assets/outputs*/contracts/round_000.jsonl
 ../rag_assets/outputs*/audits/round_000.jsonl
 ../rag_assets/outputs*/metrics/round_000.json
+../rag_assets/outputs*/metrics/test_eval_round_000.json
+../rag_assets/outputs*/metrics/train_eval_round_000.json
+../rag_assets/outputs*/metrics/trends.json
+../rag_assets/outputs*/metrics/trend_metrics.png
 ../rag_assets/checkpoints/*/small/round_000/
 ../rag_assets/checkpoints/*/large/round_000/
 ```
@@ -554,6 +597,7 @@ scripts/eval_evoco.py
 scripts/run_ablations.py
 scripts/build_seed_replay.py
 scripts/inspect_replay.py
+scripts/plot_trends.py
 ```
 
 Experiment-ready configuration templates live under `configs/experiments/`.
@@ -581,7 +625,7 @@ Current local check status:
 
 ```text
 python -m pytest -q
-67 passed, 4 skipped
+74 passed, 4 skipped
 python scripts/verify_dataset_pack.py --data-root ../rag_assets/evoco_dataset_pack
 passed
 python scripts/run_ablations.py --config configs/local/popqa_standard_fast.yaml --no_models

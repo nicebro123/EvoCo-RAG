@@ -12,7 +12,7 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from evoco_rag.config import EvoCoConfig
-from evoco_rag.data import load_train_samples
+from evoco_rag.data import load_test_samples, load_train_samples
 from evoco_rag.evaluation.evaluator import Evaluator
 from evoco_rag.large_model import LargeGeneratorAuditor
 from evoco_rag.small_model import SmallRagPolicy
@@ -43,6 +43,10 @@ def main():
 
     samples = load_train_samples(cfg.data.train_path, cfg.data.dataset_name, cfg.data.debug_size)
     print(f"loaded {len(samples)} train samples")
+    # 每轮训练后做真实泛化评估的测试子集（gold 不进 prompt）
+    eval_cap = cfg.data.eval_size if cfg.data.eval_size is not None else cfg.data.debug_size
+    test_samples = load_test_samples(cfg.data.test_path, cfg.data.dataset_name, eval_cap)
+    print(f"loaded {len(test_samples)} test samples for per-round generalization eval")
     small_init = resolve_adapter_for_loading(cfg.models.small_lora_dir) if args.resume else None
     large_init = resolve_adapter_for_loading(cfg.models.large_lora_dir) if args.resume else None
     latest_small_round = latest_checkpoint_round(cfg.models.small_lora_dir)
@@ -98,7 +102,7 @@ def main():
         max_prompt_length=cfg.runtime.max_prompt_length,
         max_completion_length=cfg.runtime.max_completion_length,
         batch_size=cfg.training.large_batch_size)
-    evaluator = Evaluator(cfg, small_policy, large_auditor)
+    evaluator = Evaluator(cfg, small_policy, large_auditor, test_samples=test_samples)
 
     trainer = CoevolutionTrainer(cfg, small_policy, large_auditor,
                                  small_trainer, large_trainer, evaluator)
