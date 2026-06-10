@@ -56,7 +56,21 @@ a different subset, e.g. `CUDA_VISIBLE_DEVICES=0,1`.
 
 ## 2. Run Ladder: debug → fast → full
 
-Always climb this ladder for a new dataset or change. Generate the configs first
+**Always start with the smallest sample size and climb.** For any new dataset,
+config change, or code change, run the 16-sample debug config first — it
+exercises the full pipeline (contract → audit → verify → reward → train → eval)
+end to end in minutes, so you catch wiring/OOM/JSON issues before paying for a
+big run. Only move up after the smaller rung finishes cleanly.
+
+| Rung | Samples | `data.debug_size` | Use it to… |
+|---|---:|---|---|
+| debug | 16 | `16` | smoke-test wiring / a code change |
+| fast | 512 | `512` | get a quick signal / tune knobs / run ablations |
+| full | all | `null` | final numbers |
+
+The debug config caps **both** training and per-round generalization eval to 16
+samples (`data.eval_size` falls back to `data.debug_size`), so the smoke run is
+fast on both ends. Generate the configs first
 (see [DATASETS.md §4](DATASETS.md#4-generate-run-configs-from-the-pack)).
 
 **Step 1 — 16-sample debug smoke test:**

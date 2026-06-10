@@ -86,9 +86,12 @@ python scripts/launch_experiments.py \
   --spec configs/experiments/popqa_fast_sweep_2gpu.yaml --no-gpu-scripts
 ```
 
-Seed replay + ablation wiring (pure heuristic, no models):
+Seed replay + ablation wiring (pure heuristic, no models). **Always use a small
+debug config (16 samples) for these quick checks** so they finish in seconds —
+never the 512-sample `_fast` or the full config:
 
 ```bash
+# Generate a 16-sample debug config once
 python scripts/make_dataset_config.py \
   --data-root ../rag_assets/evoco_dataset_pack \
   --dataset-id popqa_standard --debug-size 16 \
@@ -97,11 +100,16 @@ python scripts/make_dataset_config.py \
   --output-dir ../rag_assets/outputs_debug/popqa_standard \
   --checkpoint-root ../rag_assets/checkpoints/debug/popqa_standard
 
+# Run the no-model checks against the 16-sample debug config
 python scripts/build_seed_replay.py --config configs/local/popqa_standard_debug.yaml
-python scripts/run_ablations.py --config configs/local/popqa_standard_fast.yaml --no_models
+python scripts/run_ablations.py    --config configs/local/popqa_standard_debug.yaml --no_models
 python scripts/inspect_replay.py \
   --replay ../rag_assets/outputs_debug/popqa_standard/replay/round_000.jsonl
 ```
+
+> The committed `configs/debug.yaml` already sets `data.debug_size: 16`; any
+> generated `*_debug.yaml` does the same. Quick checks should never iterate the
+> full dataset.
 
 ---
 
