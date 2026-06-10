@@ -1,11 +1,16 @@
 # Testing & Code Checks (测试文档)
 
-This document covers **verifying the code is wired correctly without training**.
-None of these checks need a GPU or model weights; they confirm the package,
-schemas, reward attribution, and the no-model data pipeline.
+This document covers **verifying the code is wired correctly**. Testing has two
+tiers:
 
-For training/eval, see [EXPERIMENTS.md](EXPERIMENTS.md). For datasets/weights,
-see [DATASETS.md](DATASETS.md).
+- **CPU tier (no GPU, no weights):** unit tests, compile checks, and the
+  no-model data pipeline — fast, run them anywhere (§1–§5).
+- **GPU tier (torch + weights):** the full test suite (the 4 torch tests also
+  run) plus a small-sample real-model smoke run — run these on the GPU server
+  (§6).
+
+For full training/eval, see [EXPERIMENTS.md](EXPERIMENTS.md). For
+datasets/weights, see [DATASETS.md](DATASETS.md).
 
 ---
 
@@ -30,29 +35,36 @@ models — use `requirements-gpu.txt` for that (see [EXPERIMENTS.md](EXPERIMENTS
 python -m pytest -q
 ```
 
-Expected on a CPU-only machine:
+Expected on a **CPU-only** machine:
 
 ```text
 74 passed, 4 skipped
 ```
 
-The 4 skipped tests are the torch-dependent fake-model tests; on a GPU server
-with torch installed they run instead of skipping.
+The 4 skipped tests need torch (`tests/test_large_batching.py`,
+`tests/test_small_policy_heads.py`). On a **GPU server with torch installed** they
+run too, so the full suite is **78 passed** — see §6. To see skip reasons:
+
+```bash
+python -m pytest -q -rs
+```
 
 ### What the suite covers
 
-| Test file | Covers |
-|---|---|
-| `tests/test_schemas.py` | schema construction + enum validation |
-| `tests/test_verifier.py` | answer/citation/support rule verification |
-| `tests/test_rewards.py` | four-quadrant responsibility attribution |
-| `tests/test_metrics.py` | answer/retrieval/evidence/cost/calibration metrics |
-| `tests/test_replay_buffer.py` | JSONL write/read/filter/sample |
-| `tests/test_auditor.py` | robust JSON extraction + enum downgrade + fallback |
-| `tests/test_integration.py` | no-model round: contract→verify→reward→replay, resume/streaming |
-| `tests/test_ablation.py` | ablation switches (action policy / decomposed reward) |
-| `tests/test_evaluator_generalization.py` | real-generalization eval path (incl. stub models) |
-| `tests/test_plot_trends.py` | trend aggregation + plotting |
+| Test file | Covers | Needs torch |
+|---|---|:--:|
+| `tests/test_schemas.py` | schema construction + enum validation | |
+| `tests/test_verifier.py` | answer/citation/support rule verification | |
+| `tests/test_rewards.py` | four-quadrant responsibility attribution | |
+| `tests/test_metrics.py` | answer/retrieval/evidence/cost/calibration metrics | |
+| `tests/test_replay_buffer.py` | JSONL write/read/filter/sample | |
+| `tests/test_auditor.py` | robust JSON extraction + enum downgrade + fallback | |
+| `tests/test_integration.py` | no-model round: contract→verify→reward→replay, resume/streaming | |
+| `tests/test_ablation.py` | ablation switches (action policy / decomposed reward) | |
+| `tests/test_evaluator_generalization.py` | real-generalization eval path (incl. stub models) | |
+| `tests/test_plot_trends.py` | trend aggregation + plotting | |
+| `tests/test_large_batching.py` | large-model batched audit generation | ✓ |
+| `tests/test_small_policy_heads.py` | small-model evidence/action/confidence heads | ✓ |
 
 ---
 
@@ -113,7 +125,40 @@ python scripts/inspect_replay.py \
 
 ---
 
-## 5. Pre-Push Checklist
+## 5. Testing on GPU
+
+On the GPU server (torch + weights installed, see
+[EXPERIMENTS.md §1](EXPERIMENTS.md#1-install-the-gpu-environment)), do two extra
+things the CPU tier cannot.
+
+**a) Run the full unit suite** — the 4 torch tests now activate:
+
+```bash
+python -m pytest -q          # expected: 78 passed
+```
+
+These cover large-model batched audit generation and the small-model
+evidence/action/confidence heads, which only exist with torch.
+
+**b) Real-model smoke test on small samples** — the true end-to-end integration
+test: confirm the reranker and generator load, audits parse, and a full round
+trains + evaluates. **Always use the 16-sample debug config**, not a big run:
+
+```bash
+CUDA_VISIBLE_DEVICES=2,3 python scripts/train_evoco.py \
+  --config configs/local/popqa_standard_debug.yaml
+```
+
+A clean smoke run should: load both models, stream `round 0: experience k/16`,
+write `replay/round_000.jsonl`, train both LoRAs, and produce
+`metrics/test_eval_round_000.json` (real generalization). If that passes, scale up
+via the [EXPERIMENTS.md run ladder](EXPERIMENTS.md#2-run-ladder-debug--fast--full).
+Keep `data.eval_size` small (or rely on `debug_size`) so the per-round eval stays
+fast while smoke-testing.
+
+---
+
+## 6. Pre-Push Checklist
 
 Run before every push:
 
