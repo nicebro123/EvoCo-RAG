@@ -32,6 +32,9 @@ idea), `docs/协同进化RAG代码开发文档.md` (engineering design).
 
 ## Quickstart
 
+After datasets, weights, and the GPU environment are ready, the normal workflow
+is only two commands:
+
 ```bash
 # 1. Clone (code only) and create the asset root
 git clone https://github.com/nicebro123/EvoCo-RAG.git
@@ -40,15 +43,17 @@ cd EvoCo-RAG && mkdir -p ../rag_assets
 # 2. Datasets + weights  -> see docs/DATASETS.md
 # 3. Install GPU env      -> see docs/EXPERIMENTS.md
 
-# 4. Smoke test: 16-sample debug run
-CUDA_VISIBLE_DEVICES=2,3 python scripts/train_evoco.py \
-  --config configs/local/popqa_standard_debug.yaml
+# 4. Test the full pipeline without launching the official long run
+bash run.sh test --gpus 2,3
 
-# 5. Materialize all official studies without starting training
-bash scripts/launch_all_experiments.sh --dry-run
+# 5. Start the official full-data experiment queue in tmux
+bash run.sh train --gpus 2,3
+```
 
-# 6. Sanity-check the code without a GPU
-python -m pytest -q          # see docs/TESTING.md
+Shortcut after setup:
+
+```bash
+bash run.sh all --gpus 2,3
 ```
 
 ---
@@ -92,6 +97,7 @@ run_test.py     legacy CoRAG baseline evaluator
 Recommended entrypoints:
 
 ```text
+run.sh                      final orchestration script: preflight / test / train / all
 scripts/train_evoco.py      co-evolution training
 scripts/eval_evoco.py       full test-set evaluation
 scripts/run_ablations.py    ablation matrix
@@ -101,10 +107,8 @@ scripts/build_seed_replay.py  CPU-only seed replay
 scripts/launch_all_experiments.sh  one-command tmux launcher for official studies
 ```
 
-The default all-study launcher uses **full-data** configs for every official
-study: PopQAStandard sweeps, PopQAStandard hyperparameter exploration,
-multi-dataset checks, selected PopQA settings, and PopQA mechanism ablations.
-Fast specs remain available for debugging; use `--spec` to run a single study.
+Most users should use `run.sh`. The lower-level scripts are kept for debugging,
+custom configs, and single-study runs.
 
 ---
 

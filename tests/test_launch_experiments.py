@@ -104,6 +104,44 @@ def test_launch_experiments_dry_run_materializes_configs(tmp_path):
     assert (study_dir / "launch_tmux.sh").exists()
 
 
+def test_launch_experiments_respects_env_gpu_override(tmp_path):
+    base_config = tmp_path / "base.yaml"
+    output_root = tmp_path / "outputs"
+    checkpoint_root = tmp_path / "checkpoints"
+    spec = tmp_path / "spec.yaml"
+    _write_base_config(base_config)
+    spec.write_text(
+        yaml.safe_dump(
+            {
+                "study_name": "gpu_override",
+                "output_root": str(output_root),
+                "checkpoint_root": str(checkpoint_root),
+                "base_config": str(base_config),
+                "defaults": {"gpu": "0", "seed": 7},
+                "experiments": [{"name": "base_run"}],
+            },
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+    env = os.environ.copy()
+    env["EVOCO_GPUS"] = "2,3"
+
+    subprocess.run(
+        [sys.executable, "scripts/launch_experiments.py", "--spec", str(spec)],
+        check=True,
+        text=True,
+        capture_output=True,
+        env=env,
+    )
+
+    study_dir = output_root / "gpu_override"
+    manifest = yaml.safe_load((study_dir / "launch_manifest.yaml").read_text(encoding="utf-8"))
+    assert manifest["runs"][0]["gpu"] == "2,3"
+    assert (study_dir / "00_base_run_s7_g2_3" / "run_config.yaml").exists()
+    assert (study_dir / "run_gpu2_3.sh").exists()
+
+
 def test_launch_experiments_launch_tmux_invokes_generated_launcher(tmp_path):
     base_config = tmp_path / "base.yaml"
     output_root = tmp_path / "outputs"

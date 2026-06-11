@@ -13,6 +13,12 @@ For full training/eval, see [EXPERIMENTS.md](EXPERIMENTS.md). For
 datasets/weights, see [DATASETS.md](DATASETS.md). For the full documentation
 map, see [README.md](README.md).
 
+Recommended full-flow command on a GPU server:
+
+```bash
+bash run.sh test --gpus 2,3
+```
+
 ---
 
 ## 1. CPU Environment

@@ -27,6 +27,7 @@ Options:
 
 Environment:
   EVOCO_PYTHON      Python executable to use. Default: python.
+  EVOCO_GPUS        Override the spec GPU list, e.g. 0,1. Default: spec value.
 EOF
 }
 

@@ -26,51 +26,35 @@ logs live outside Git under `../rag_assets/`.
 | [协同进化RAG论文构想.md](协同进化RAG论文构想.md) | Paper-level motivation, method story, CCF-A risk/innovation plan | Research draft |
 | [协同进化RAG代码开发文档.md](协同进化RAG代码开发文档.md) | Engineering design, implementation mapping, ECR TODO tracker | Development record |
 
-## Minimal Reproduction Commands
+## Minimal Run Commands
 
-Run these from the repository root after cloning.
+After datasets, weights, and the GPU environment are ready, run these from the
+repository root:
 
 ```bash
-# Dataset pack and generated local configs
-python scripts/verify_dataset_pack.py \
-  --data-root ../rag_assets/rag_data/evoco_dataset_pack
-python scripts/make_dataset_config.py \
-  --data-root ../rag_assets/rag_data/evoco_dataset_pack \
-  --all --output-root configs/local
+# Full pipeline test: data/config/code checks + official dry-run + 16-sample GPU smoke.
+bash run.sh test --gpus 2,3
 
-# 16-sample real-model smoke test
-CUDA_VISIBLE_DEVICES=2,3 python scripts/train_evoco.py \
-  --config configs/local/popqa_standard_debug.yaml
+# Start official full-data training in tmux.
+bash run.sh train --gpus 2,3
 
-# Materialize all official studies without starting tmux
-bash scripts/launch_all_experiments.sh --dry-run
-
-# CPU-safe checks before pushing
-python -m pytest -q
-git diff --check
+# Or run test first and then train.
+bash run.sh all --gpus 2,3
 ```
 
 ## Official Experiment Matrix
 
-The all-study launcher verifies the dataset pack, regenerates local dataset
-configs, materializes every study, and starts one master tmux queue. The default
-queue uses full-data configs and runs sequentially so a two-GPU H20 pair is not
-oversubscribed. Fast specs are kept only for debugging/preflight runs.
+`run.sh train` launches the official **full-data** queue: 32 runs across PopQA
+sweeps, PopQA hyperparameters, multi-dataset checks, selected PopQA settings,
+and mechanism ablations. The queue runs in one master tmux session so a two-GPU
+H20 pair is not oversubscribed.
 
 ```bash
-bash scripts/launch_all_experiments.sh --dry-run
-bash scripts/launch_all_experiments.sh
+bash run.sh train --gpus 2,3
 ```
 
-| Study | Runs | Purpose |
-|---|---:|---|
-| `evoco_popqa_sweep_full_2gpu` | 5 | Full PopQAStandard sweep: top-k, reward, audit switches |
-| `evoco_popqa_hparam_full_2gpu` | 10 | Full hyperparameter exploration for top-k, audit count, confidence thresholds, and context length |
-| `evoco_multidataset_full_2gpu` | 5 | Full checks on PopQAStandard, HotpotQA, NQ, ASQA, and PopQA retrieval |
-| `evoco_popqa_full_sweep_2gpu` | 4 | Selected full PopQAStandard cost/accuracy settings |
-| `evoco_popqa_ablation_full_2gpu` | 8 | Full PopQAStandard mechanism ablations for the paper table |
-
-Total: 32 runs.
+For the exact study list and low-level launcher options, see
+[../configs/experiments/README.md](../configs/experiments/README.md).
 
 ## Asset Boundary
 

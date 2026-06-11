@@ -12,6 +12,40 @@ All commands assume the working directory is the repo root and assets are under
 
 ---
 
+## 0. Recommended One-Command Entrypoint
+
+Use `run.sh` for the normal workflow:
+
+```bash
+# data/config/code checks + official full-data dry-run + 16-sample GPU smoke
+bash run.sh test --gpus 2,3
+
+# start the official 32-run full-data queue in tmux
+bash run.sh train --gpus 2,3
+
+# run test first, then start official training, in one command
+bash run.sh all --gpus 2,3
+```
+
+Useful variants when debugging:
+
+```bash
+# no GPU training; verifies data/config/code and materializes official configs
+bash run.sh preflight
+
+# reuse existing configs/local when the dataset pack is not mounted on this machine
+bash run.sh preflight --skip-verify --no-generate-configs
+
+# choose a different GPU pair
+bash run.sh test --gpus 0,1
+```
+
+`run.sh test` creates an isolated debug config under `configs/local/` and writes
+its smoke-test outputs under `../rag_assets/outputs_debug/run_sh/<run_id>/`, so
+repeated tests do not collide with existing checkpoints.
+
+---
+
 ## 1. Install the GPU Environment
 
 Pinned reproduction environment:

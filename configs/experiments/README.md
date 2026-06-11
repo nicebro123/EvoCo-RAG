@@ -84,6 +84,14 @@ bash ../rag_assets/outputs/experiments/evoco_popqa_sweep_full_2gpu/launch_tmux.s
 Recommended bash entrypoint for all official experiment studies:
 
 ```bash
+bash run.sh preflight
+bash run.sh test --gpus 2,3
+bash run.sh train --gpus 2,3
+```
+
+Lower-level launcher commands, if you want to bypass `run.sh`:
+
+```bash
 bash scripts/launch_all_experiments.sh --dry-run
 bash scripts/launch_all_experiments.sh
 ```

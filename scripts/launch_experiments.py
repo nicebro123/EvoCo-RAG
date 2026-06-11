@@ -91,12 +91,15 @@ def experiment_list(spec: Mapping[str, Any]) -> list[dict[str, Any]]:
     defaults = spec.get("defaults", {}) or {}
     if not isinstance(defaults, Mapping):
         raise ValueError("spec 'defaults' must be a mapping")
+    gpu_override = os.environ.get("EVOCO_GPUS")
     output = []
     for index, item in enumerate(experiments):
         if not isinstance(item, dict):
             raise ValueError(f"experiments[{index}] must be a mapping")
         merged = dict(defaults)
         merged.update(item)
+        if gpu_override:
+            merged["gpu"] = gpu_override
         if "name" not in merged:
             raise ValueError(f"experiments[{index}] is missing required field 'name'")
         output.append(merged)

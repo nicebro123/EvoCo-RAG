@@ -45,6 +45,7 @@ Options:
 Environment:
   EVOCO_PYTHON           Python executable to use. Default: python.
   EVOCO_DATA_ROOT        Dataset pack path, overridden by --data-root.
+  EVOCO_GPUS             Override every spec GPU list, e.g. 0,1. Default: spec value.
   EVOCO_VERIFY_MAX_ROWS  Rows per split checked by verification. Default: 5.
   EVOCO_MASTER_OUTPUT_DIR  Master queue directory. Default: ../rag_assets/outputs/experiments/evoco_all_experiments.
   EVOCO_TMUX_SESSION     Master tmux session name. Default: evoco_all_experiments.
