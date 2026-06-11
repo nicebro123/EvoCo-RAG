@@ -1,8 +1,8 @@
 # Experiment Configs
 
-For the public quickstart and doc map, start from
-[../../README.md](../../README.md) and [../../docs/README.md](../../docs/README.md).
-This file is the detailed reference for experiment specs and launchers.
+For the public quickstart, dataset setup, weight download, smoke test, and full
+experiment workflow, start from [../../README.md](../../README.md). This file is
+the detailed reference for experiment specs and launchers.
 
 This directory contains two experiment styles:
 

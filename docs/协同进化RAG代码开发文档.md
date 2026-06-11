@@ -1,9 +1,7 @@
 # EvoCo-RAG 代码开发文档
 
-> 阅读定位：本文是工程设计与实现记录，不是复现入口。快速复现请从
-> [README.md](../README.md) 和 [docs/README.md](README.md) 开始；数据、训练、
-> 测试分别对应 [DATASETS.md](DATASETS.md)、[EXPERIMENTS.md](EXPERIMENTS.md)、
-> [TESTING.md](TESTING.md)。
+> 阅读定位：本文是工程设计与实现记录，不是复现入口。快速复现、数据下载、
+> 权重下载、冒烟测试和全量实验请统一查看 [README.md](../README.md)。
 
 ## 1. 开发目标
 
