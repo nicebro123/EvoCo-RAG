@@ -4,8 +4,8 @@ project:
   output_dir: ../rag_assets/outputs/experiments/hparam_audit_self_consistency
 
 data:
-  train_path: ../rag_assets/data_v33/Pop/train_labels_list.json
-  test_path: ../rag_assets/data/Pop/test.json
+  train_path: ../rag_assets/rag_data/evoco_dataset_pack/datasets/popqa_standard/data_v33/Pop/train_labels_list.json
+  test_path: ../rag_assets/rag_data/evoco_dataset_pack/datasets/popqa_standard/data/Pop/test.json
   dataset_name: Pop
   debug_size: null
 

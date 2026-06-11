@@ -1,8 +1,8 @@
 """数据加载与统一样本格式（开发文档 §4.1、§5.2）。
 
-兼容两类现有数据：
-  训练：../rag_assets/data_v33/Pop/train_labels_list.json  —— question / answers / context / labels
-  测试：../rag_assets/data/Pop/test.json                    —— question / answers / ctxs
+兼容 dataset pack 中两类 Pop-style JSON：
+  训练：datasets/<dataset_id>/data_v33/Pop/train_labels_list.json —— question / answers / context / labels
+  测试：datasets/<dataset_id>/data/Pop/test.json                  —— question / answers / ctxs
 统一转为 RagSample。context 字符串形如 "title: X\ncontext: Y"，用简单规则切出
 title 与 text，并保留 raw。
 """

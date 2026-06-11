@@ -38,12 +38,12 @@ python -m pytest -q
 Expected on a **CPU-only** machine:
 
 ```text
-77 passed, 4 skipped
+80 passed, 4 skipped
 ```
 
 The 4 skipped tests need torch (`tests/test_large_batching.py`,
 `tests/test_small_policy_heads.py`). On a **GPU server with torch installed** they
-run too, so the full suite is **81 passed** — see §6. To see skip reasons:
+run too, so the full suite is **84 passed** — see §6. To see skip reasons:
 
 ```bash
 python -m pytest -q -rs
@@ -134,7 +134,7 @@ things the CPU tier cannot.
 **a) Run the full unit suite** — the 4 torch tests now activate:
 
 ```bash
-python -m pytest -q          # expected: 81 passed
+python -m pytest -q          # expected: 84 passed
 ```
 
 These cover large-model batched audit generation and the small-model
@@ -179,7 +179,7 @@ during these tests. Only after rung 2 looks right do you launch the full run.
 Run before every push:
 
 ```bash
-python -m pytest -q                       # 77 passed, 4 skipped
+python -m pytest -q                       # 80 passed, 4 skipped
 python -m py_compile evoco_rag/*.py evoco_rag/trainers/*.py evoco_rag/evaluation/*.py scripts/*.py
 git diff --check                          # no whitespace/conflict markers
 git status --short --branch               # confirm only intended files

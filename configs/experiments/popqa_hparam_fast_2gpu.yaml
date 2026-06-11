@@ -1,0 +1,110 @@
+# Fast PopQA hyperparameter exploration.
+#
+# These 512-sample runs are for choosing cost/accuracy settings before spending
+# full-run compute. The final selected settings are mirrored in
+# popqa_full_sweep_2gpu.yaml.
+#
+# Generate local dataset configs first:
+#   python scripts/make_dataset_config.py --data-root ../rag_assets/rag_data/evoco_dataset_pack --all --output-root configs/local
+#
+# Dry run:
+#   python scripts/launch_experiments.py --spec configs/experiments/popqa_hparam_fast_2gpu.yaml
+
+study_name: evoco_popqa_hparam_fast_2gpu
+output_root: ../rag_assets/outputs/experiments
+checkpoint_root: ../rag_assets/checkpoints/experiments
+base_config: configs/local/popqa_standard_fast.yaml
+
+defaults:
+  gpu: "2,3"
+  seed: 42
+
+experiments:
+  - name: top3_audit1_base
+
+  - name: top5_audit3
+    overrides:
+      contract.top_k: 5
+      contract.max_selected_docs: 5
+      runtime.candidate_doc_char_limit: 1200
+      runtime.num_audit_candidates: 3
+      runtime.audit_batch_size: 2
+      runtime.max_prompt_length: 3072
+      runtime.max_completion_length: 1024
+      training.batch_size: 4
+      training.large_batch_size: 2
+      training.num_generations: 2
+
+  - name: top8_audit5
+    overrides:
+      contract.top_k: 8
+      contract.max_selected_docs: 8
+      runtime.candidate_doc_char_limit: 1600
+      runtime.num_audit_candidates: 5
+      runtime.audit_batch_size: 2
+      runtime.max_prompt_length: 4096
+      runtime.max_completion_length: 1024
+      training.batch_size: 4
+      training.large_batch_size: 2
+      training.num_generations: 2
+
+  - name: high_conf_065_top5
+    overrides:
+      contract.top_k: 5
+      contract.max_selected_docs: 5
+      contract.high_conf_threshold: 0.65
+      runtime.candidate_doc_char_limit: 1200
+      runtime.num_audit_candidates: 3
+      runtime.audit_batch_size: 2
+
+  - name: high_conf_085_top5
+    overrides:
+      contract.top_k: 5
+      contract.max_selected_docs: 5
+      contract.high_conf_threshold: 0.85
+      runtime.candidate_doc_char_limit: 1200
+      runtime.num_audit_candidates: 3
+      runtime.audit_batch_size: 2
+
+  - name: action_conf_035_top5
+    overrides:
+      contract.top_k: 5
+      contract.max_selected_docs: 5
+      contract.policy_action_min_conf: 0.35
+      runtime.candidate_doc_char_limit: 1200
+      runtime.num_audit_candidates: 3
+      runtime.audit_batch_size: 2
+
+  - name: action_conf_055_top5
+    overrides:
+      contract.top_k: 5
+      contract.max_selected_docs: 5
+      contract.policy_action_min_conf: 0.55
+      runtime.candidate_doc_char_limit: 1200
+      runtime.num_audit_candidates: 3
+      runtime.audit_batch_size: 2
+
+  - name: audit1_top5
+    overrides:
+      contract.top_k: 5
+      contract.max_selected_docs: 5
+      runtime.candidate_doc_char_limit: 1200
+      runtime.num_audit_candidates: 1
+      runtime.audit_batch_size: 4
+
+  - name: audit5_top5
+    overrides:
+      contract.top_k: 5
+      contract.max_selected_docs: 5
+      runtime.candidate_doc_char_limit: 1200
+      runtime.num_audit_candidates: 5
+      runtime.audit_batch_size: 2
+
+  - name: long_context_top5
+    overrides:
+      contract.top_k: 5
+      contract.max_selected_docs: 5
+      runtime.candidate_doc_char_limit: 1600
+      runtime.num_audit_candidates: 3
+      runtime.audit_batch_size: 2
+      runtime.max_prompt_length: 4096

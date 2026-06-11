@@ -42,7 +42,10 @@ cd EvoCo-RAG && mkdir -p ../rag_assets
 CUDA_VISIBLE_DEVICES=2,3 python scripts/train_evoco.py \
   --config configs/local/popqa_standard_debug.yaml
 
-# 5. Sanity-check the code without a GPU
+# 5. Materialize all official studies without starting training
+bash scripts/launch_all_experiments.sh --dry-run
+
+# 6. Sanity-check the code without a GPU
 python -m pytest -q          # see docs/TESTING.md
 ```
 
@@ -93,7 +96,13 @@ scripts/run_ablations.py    ablation matrix
 scripts/plot_trends.py      multi-round trend summary + plots
 scripts/inspect_replay.py   replay buffer inspection
 scripts/build_seed_replay.py  CPU-only seed replay
+scripts/launch_all_experiments.sh  one-command tmux launcher for official studies
 ```
+
+The default all-study launcher covers PopQAStandard fast sweeps, PopQAStandard
+hyperparameter exploration, multi-dataset fast checks, full PopQA selected
+settings, and full PopQA mechanism ablations. Use `--spec` to run a single
+study.
 
 ---
 

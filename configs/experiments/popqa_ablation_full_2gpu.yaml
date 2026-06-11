@@ -1,0 +1,75 @@
+# Full PopQA ablation study for the paper's main mechanism table.
+#
+# This study keeps the PopQA full split and 3 training rounds, then disables one
+# EvoCo-RAG component at a time. Use it after the fast sweeps look stable.
+#
+# Generate local dataset configs first:
+#   python scripts/make_dataset_config.py --data-root ../rag_assets/rag_data/evoco_dataset_pack --all --full --output-root configs/local
+#
+# Dry run:
+#   python scripts/launch_experiments.py --spec configs/experiments/popqa_ablation_full_2gpu.yaml
+
+study_name: evoco_popqa_ablation_full_2gpu
+output_root: ../rag_assets/outputs/experiments
+checkpoint_root: ../rag_assets/checkpoints/experiments
+base_config: configs/local/popqa_standard_full.yaml
+
+defaults:
+  gpu: "2,3"
+  seed: 42
+
+overrides:
+  contract.top_k: 5
+  contract.max_selected_docs: 5
+  runtime.candidate_doc_char_limit: 1200
+  runtime.num_audit_candidates: 3
+  runtime.audit_batch_size: 2
+  runtime.max_prompt_length: 3072
+  runtime.max_completion_length: 1024
+  runtime.progress_interval: 50
+  runtime.replay_flush_interval: 10
+  training.batch_size: 4
+  training.large_batch_size: 2
+  training.num_generations: 2
+
+experiments:
+  - name: evoco_full
+
+  - name: answer_only_reward
+    overrides:
+      ablation.use_decomposed_reward: false
+
+  - name: no_audit
+    overrides:
+      ablation.use_evidence_audit: false
+      runtime.num_audit_candidates: 1
+
+  - name: no_action_policy
+    overrides:
+      ablation.use_action_policy: false
+
+  - name: no_policy_heads
+    overrides:
+      small_policy.use_policy_heads: false
+      contract.action_mode: heuristic
+
+  - name: small_only
+    overrides:
+      ablation.train_large_lora: false
+      training.train_large_lora: false
+
+  - name: large_only
+    overrides:
+      ablation.train_small_lora: false
+      training.train_small_lora: false
+
+  - name: baseline_current_corag
+    overrides:
+      ablation.use_evidence_audit: false
+      ablation.use_action_policy: false
+      ablation.use_decomposed_reward: false
+      ablation.train_large_lora: false
+      training.train_large_lora: false
+      small_policy.use_policy_heads: false
+      contract.action_mode: heuristic
+      runtime.num_audit_candidates: 1

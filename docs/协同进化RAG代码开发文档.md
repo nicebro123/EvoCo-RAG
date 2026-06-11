@@ -51,7 +51,7 @@ replay buffer 保存结构化经验
 | `run_test.py` | 加载 adapter，rerank top-3，调用大模型生成并算 accuracy | 增加证据指标、引用指标、action 成本指标 |
 | `utils.py` | 数据处理、答案标准化、exact presence、metrics | 增加 JSON 解析、证据校验、校准指标 |
 | `llm_local_prompt.py` | 本地大模型 batch generation | 增加结构化 JSON 输出解析和重试 |
-| `../rag_assets/data_v33/Pop/train_labels_list.json` | 训练数据，labels 为文档级历史标签列表 | 后续保留为 seed labels，新增 audited labels |
+| `../rag_assets/rag_data/evoco_dataset_pack/datasets/popqa_standard/data_v33/Pop/train_labels_list.json` | 训练数据，labels 为文档级历史标签列表 | 后续保留为 seed labels，新增 audited labels |
 | `../rag_assets/adapters/generator-CoRAG` | 大模型 LoRA adapter | 可作为已有 adapter 参考 |
 | `../rag_assets/adapters/reranker-CoRAG` | 小模型 LoRA adapter | 可作为已有 adapter 参考 |
 
@@ -562,7 +562,7 @@ for round_id in range(num_rounds):
 
 1. 增加 `configs/debug.yaml`。
 2. 增加 `scripts/train_baseline_debug.py` 或给现有 `run_train.py` 增加参数化入口。
-3. 修复 `run_test.py` 中旧式本地数据路径与 `../rag_assets/data/Pop/test.json` 的不一致。
+3. 修复 `run_test.py` 中旧式本地数据路径与 `../rag_assets/rag_data/evoco_dataset_pack/datasets/popqa_standard/data/Pop/test.json` 的不一致。
 4. 删除或忽略 `__pycache__`。
 5. 输出 baseline 指标：accuracy、Recall@k、answer-in-context rate。
 
@@ -785,6 +785,11 @@ train_large_lora: true
 | evoco_large_only | 只训练大模型 LoRA |
 | evoco_full | 完整方案 |
 
+当前 PopQAStandard 主实验已拆成两类 launcher spec：
+
+- `configs/experiments/popqa_hparam_fast_2gpu.yaml`：512-sample 超参探索，用于筛 top-k、audit candidates、置信阈值和上下文长度。
+- `configs/experiments/popqa_ablation_full_2gpu.yaml`：full 3-round 机制消融，用于论文主表，包括 `evoco_full`、`answer_only_reward`、`no_audit`、`no_action_policy`、`no_policy_heads`、`small_only`、`large_only`、`baseline_current_corag`。
+
 ## 8. 配置设计
 
 建议 `configs/evoco_popqa.yaml`：
@@ -796,8 +801,8 @@ project:
   output_dir: ../rag_assets/outputs/evoco_popqa
 
 data:
-  train_path: ../rag_assets/data_v33/Pop/train_labels_list.json
-  test_path: ../rag_assets/data/Pop/test.json
+  train_path: ../rag_assets/rag_data/evoco_dataset_pack/datasets/popqa_standard/data_v33/Pop/train_labels_list.json
+  test_path: ../rag_assets/rag_data/evoco_dataset_pack/datasets/popqa_standard/data/Pop/test.json
   dataset_name: Pop
   debug_size: null
 

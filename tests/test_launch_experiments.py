@@ -363,3 +363,147 @@ print('fake eval done')
     assert "fake train should not run" not in result.stdout
     assert (run_dir / "metrics" / "test_eval.json").exists()
     assert "fake eval done" in (run_dir / "eval.log").read_text(encoding="utf-8")
+
+
+def test_launch_all_experiments_dry_run_forwards_specs(tmp_path):
+    base_config = tmp_path / "base.yaml"
+    output_root = tmp_path / "outputs"
+    checkpoint_root = tmp_path / "checkpoints"
+    spec = tmp_path / "spec.yaml"
+    _write_base_config(base_config)
+    spec.write_text(
+        yaml.safe_dump(
+            {
+                "study_name": "all_entry",
+                "output_root": str(output_root),
+                "checkpoint_root": str(checkpoint_root),
+                "base_config": str(base_config),
+                "defaults": {"gpu": "0", "seed": 7},
+                "experiments": [{"name": "one"}],
+            },
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(
+        [
+            "bash",
+            "scripts/launch_all_experiments.sh",
+            "--skip-verify",
+            "--no-generate-configs",
+            "--dry-run",
+            "--spec",
+            str(spec),
+        ],
+        check=True,
+        text=True,
+        capture_output=True,
+    )
+
+    study_dir = output_root / "all_entry"
+    assert "mode: dry run" in result.stdout
+    assert "Dry run complete for 1 spec(s)." in result.stdout
+    assert (study_dir / "00_one_s7_g0" / "run_config.yaml").exists()
+    assert (study_dir / "run_gpu0.sh").exists()
+
+
+def test_launch_all_experiments_launch_uses_master_tmux_queue(tmp_path):
+    base_config = tmp_path / "base.yaml"
+    output_root = tmp_path / "outputs"
+    checkpoint_root = tmp_path / "checkpoints"
+    spec = tmp_path / "spec.yaml"
+    fake_bin = tmp_path / "bin"
+    tmux_calls = tmp_path / "tmux_calls.txt"
+    master_dir = tmp_path / "master"
+    fake_bin.mkdir()
+    fake_tmux = fake_bin / "tmux"
+    fake_tmux.write_text(
+        f"""#!/usr/bin/env bash
+echo "$@" >> {str(tmux_calls)!r}
+if [[ "$1" == "has-session" ]]; then
+  exit 1
+fi
+exit 0
+""",
+        encoding="utf-8",
+    )
+    fake_tmux.chmod(0o755)
+    _write_base_config(base_config)
+    spec.write_text(
+        yaml.safe_dump(
+            {
+                "study_name": "all_launch",
+                "output_root": str(output_root),
+                "checkpoint_root": str(checkpoint_root),
+                "base_config": str(base_config),
+                "defaults": {"gpu": "0", "seed": 7},
+                "experiments": [{"name": "one"}],
+            },
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+    env = {
+        **os.environ,
+        "PATH": f"{fake_bin}{os.pathsep}{os.environ.get('PATH', '')}",
+        "EVOCO_MASTER_OUTPUT_DIR": str(master_dir),
+        "EVOCO_TMUX_SESSION": "unit_all",
+    }
+
+    result = subprocess.run(
+        [
+            "bash",
+            "scripts/launch_all_experiments.sh",
+            "--skip-verify",
+            "--no-generate-configs",
+            "--spec",
+            str(spec),
+        ],
+        check=True,
+        text=True,
+        capture_output=True,
+        env=env,
+    )
+
+    master_script = master_dir / "run_all_gpu_queues.sh"
+    calls = tmux_calls.read_text(encoding="utf-8")
+    assert "Started master tmux queue: unit_all" in result.stdout
+    assert "has-session -t unit_all" in calls
+    assert "new -d -s unit_all" in calls
+    assert master_script.exists()
+    assert str(output_root / "all_launch" / "run_gpu0.sh") in master_script.read_text(encoding="utf-8")
+
+
+def test_official_popqa_experiment_specs_cover_main_studies():
+    specs = {
+        path.name: yaml.safe_load(path.read_text(encoding="utf-8"))
+        for path in Path("configs/experiments").glob("popqa_*_2gpu.yaml")
+    }
+    assert {
+        "popqa_fast_sweep_2gpu.yaml",
+        "popqa_hparam_fast_2gpu.yaml",
+        "popqa_full_sweep_2gpu.yaml",
+        "popqa_ablation_full_2gpu.yaml",
+    }.issubset(specs)
+
+    ablation_names = {item["name"] for item in specs["popqa_ablation_full_2gpu.yaml"]["experiments"]}
+    assert {
+        "evoco_full",
+        "answer_only_reward",
+        "no_audit",
+        "no_action_policy",
+        "no_policy_heads",
+        "small_only",
+        "large_only",
+        "baseline_current_corag",
+    } == ablation_names
+
+    hparam_names = {item["name"] for item in specs["popqa_hparam_fast_2gpu.yaml"]["experiments"]}
+    assert {"top3_audit1_base", "top5_audit3", "top8_audit5"}.issubset(hparam_names)
+    assert {"high_conf_065_top5", "high_conf_085_top5"}.issubset(hparam_names)
+    assert {"action_conf_035_top5", "action_conf_055_top5"}.issubset(hparam_names)
+
+    launch_all = Path("scripts/launch_all_experiments.sh").read_text(encoding="utf-8")
+    for spec_name in specs:
+        assert f"configs/experiments/{spec_name}" in launch_all

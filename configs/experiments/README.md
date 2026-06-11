@@ -73,7 +73,29 @@ Start all generated GPU queues in tmux:
 bash ../rag_assets/outputs/experiments/evoco_popqa_fast_sweep_2gpu/launch_tmux.sh
 ```
 
-Recommended bash entrypoint:
+Recommended bash entrypoint for all official experiment studies:
+
+```bash
+bash scripts/launch_all_experiments.sh --dry-run
+bash scripts/launch_all_experiments.sh
+```
+
+This verifies the dataset pack, regenerates `configs/local/*_{fast,full}.yaml`,
+materializes every study, and starts one master tmux queue. The master queue
+runs the generated per-study GPU scripts sequentially, so multiple studies do
+not compete for the same `CUDA_VISIBLE_DEVICES=2,3` pair.
+
+Official launcher specs:
+
+| Spec | Runs | Purpose |
+|---|---:|---|
+| `popqa_fast_sweep_2gpu.yaml` | 5 | quick PopQA sanity sweep: top-k, reward, audit switches |
+| `popqa_hparam_fast_2gpu.yaml` | 10 | cheap PopQA hyperparameter search for top-k, audit count, confidence thresholds, context length |
+| `multidataset_fast_2gpu.yaml` | 5 | 512-sample generalization check across converted datasets |
+| `popqa_full_sweep_2gpu.yaml` | 4 | selected full PopQA settings for final cost/accuracy comparison |
+| `popqa_ablation_full_2gpu.yaml` | 8 | full PopQA mechanism ablations for the main paper table |
+
+Single-study bash entrypoint:
 
 ```bash
 bash scripts/launch_tmux.sh
@@ -132,6 +154,11 @@ experiments:
 | `hparam_cost_top3.yaml` | Lower-cost top-3 setting | `CUDA_VISIBLE_DEVICES=2,3 python scripts/train_evoco.py --config configs/experiments/hparam_cost_top3.yaml` |
 | `hparam_precision_top8.yaml` | Higher-recall top-8 setting | `CUDA_VISIBLE_DEVICES=2,3 python scripts/train_evoco.py --config configs/experiments/hparam_precision_top8.yaml` |
 | `hparam_audit_self_consistency.yaml` | More audit candidates for self-consistency | `CUDA_VISIBLE_DEVICES=2,3 python scripts/train_evoco.py --config configs/experiments/hparam_audit_self_consistency.yaml` |
+
+The standalone full PopQA settings are also represented by launcher specs:
+`popqa_full_sweep_2gpu.yaml` for selected hyperparameter settings and
+`popqa_ablation_full_2gpu.yaml` for mechanism ablations. Both are included in
+`scripts/launch_all_experiments.sh`.
 
 When creating a new experiment, copy one YAML and change all three roots:
 

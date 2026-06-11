@@ -66,9 +66,9 @@ class ModelsConfig:
 
 @dataclass
 class DataConfig:
-    train_path: str = "../rag_assets/data_v33/Pop/train_labels_list.json"
-    test_path: str = "../rag_assets/data/Pop/test.json"
-    dataset_name: str = "Pop"
+    train_path: str = "../rag_assets/rag_data/evoco_dataset_pack/datasets/popqa_standard/data_v33/Pop/train_labels_list.json"
+    test_path: str = "../rag_assets/rag_data/evoco_dataset_pack/datasets/popqa_standard/data/Pop/test.json"
+    dataset_name: str = "PopQAStandard"
     debug_size: int | None = None
     # 每轮训练后做"真实泛化"评估时使用的测试子集大小（None=全量 test）。
     # 全量 test + 大模型审计每轮很贵，故可在训练循环里截断；最终 eval_evoco 仍用全量。

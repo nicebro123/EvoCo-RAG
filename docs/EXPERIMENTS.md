@@ -248,6 +248,10 @@ python scripts/launch_experiments.py \
 bash scripts/launch_tmux.sh
 bash scripts/launch_tmux.sh configs/experiments/multidataset_fast_2gpu.yaml
 bash scripts/launch_tmux.sh --dry-run
+
+# one command for all official studies
+bash scripts/launch_all_experiments.sh --dry-run
+bash scripts/launch_all_experiments.sh
 ```
 
 Each generated run directory contains `run_config.yaml`, `train.log`,
@@ -255,6 +259,29 @@ Each generated run directory contains `run_config.yaml`, `train.log`,
 training finished but evaluation was interrupted, the launcher runs evaluation
 only instead of retraining into existing checkpoints. Spec templates and their
 format live under `configs/experiments/` (see its local `README.md`).
+
+`scripts/launch_all_experiments.sh` first verifies the dataset pack and
+regenerates `configs/local` from `../rag_assets/rag_data/evoco_dataset_pack`.
+It then materializes all official launcher specs and starts a single master tmux
+session named `evoco_all_experiments`. The studies run sequentially inside that
+session to avoid multiple processes competing for the same two H20 GPUs.
+
+The default all-study queue contains:
+
+| Study | Runs | Role |
+|---|---:|---|
+| `evoco_popqa_fast_sweep_2gpu` | 5 | fast PopQA sanity and small ablation checks |
+| `evoco_popqa_hparam_fast_2gpu` | 10 | fast PopQA hyperparameter exploration |
+| `evoco_multidataset_fast_2gpu` | 5 | fast multi-dataset generalization check |
+| `evoco_popqa_full_sweep_2gpu` | 4 | selected full PopQA cost/accuracy settings |
+| `evoco_popqa_ablation_full_2gpu` | 8 | full PopQA mechanism ablations |
+
+To run only one study, pass `--spec`, for example:
+
+```bash
+bash scripts/launch_all_experiments.sh \
+  --spec configs/experiments/popqa_ablation_full_2gpu.yaml
+```
 
 ---
 
