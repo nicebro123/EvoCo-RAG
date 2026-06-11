@@ -91,6 +91,7 @@ def experiment_list(spec: Mapping[str, Any]) -> list[dict[str, Any]]:
     defaults = spec.get("defaults", {}) or {}
     if not isinstance(defaults, Mapping):
         raise ValueError("spec 'defaults' must be a mapping")
+    gpu_pairs = parse_gpu_pairs(os.environ.get("EVOCO_GPU_PAIRS"))
     gpu_override = os.environ.get("EVOCO_GPUS")
     output = []
     for index, item in enumerate(experiments):
@@ -98,12 +99,33 @@ def experiment_list(spec: Mapping[str, Any]) -> list[dict[str, Any]]:
             raise ValueError(f"experiments[{index}] must be a mapping")
         merged = dict(defaults)
         merged.update(item)
-        if gpu_override:
+        if gpu_pairs:
+            merged["gpu"] = gpu_pairs[index % len(gpu_pairs)]
+        elif gpu_override:
             merged["gpu"] = gpu_override
         if "name" not in merged:
             raise ValueError(f"experiments[{index}] is missing required field 'name'")
         output.append(merged)
     return output
+
+
+def parse_gpu_pairs(raw: str | None) -> list[str]:
+    """Parse a semicolon-separated list such as '0,1;2,3;4,5;6,7'."""
+    if raw is None or not str(raw).strip():
+        return []
+    pairs = [part.strip() for part in str(raw).split(";") if part.strip()]
+    if not pairs:
+        raise ValueError("EVOCO_GPU_PAIRS is set but contains no GPU pairs")
+    for pair in pairs:
+        ids = [item.strip() for item in pair.split(",") if item.strip()]
+        if len(ids) < 1:
+            raise ValueError(f"invalid GPU pair in EVOCO_GPU_PAIRS: {pair!r}")
+        if len(set(ids)) != len(ids):
+            raise ValueError(f"duplicate GPU id in EVOCO_GPU_PAIRS pair: {pair!r}")
+        for gpu_id in ids:
+            if not gpu_id.isdigit():
+                raise ValueError(f"GPU ids must be integers in EVOCO_GPU_PAIRS: {pair!r}")
+    return pairs
 
 
 def format_run_name(index: int, experiment: Mapping[str, Any], include_gpu: bool = True) -> str:

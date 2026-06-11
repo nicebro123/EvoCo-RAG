@@ -89,6 +89,17 @@ bash run.sh test --gpus 2,3
 bash run.sh train --gpus 2,3
 ```
 
+On an 8-GPU machine, keep 2 GPUs as one experiment worker and distribute runs
+across four workers:
+
+```bash
+bash run.sh train --gpu-pairs '0,1;2,3;4,5;6,7'
+```
+
+This creates one worker tmux session per pair, e.g.
+`evoco_all_experiments_g0_1`, `evoco_all_experiments_g2_3`,
+`evoco_all_experiments_g4_5`, and `evoco_all_experiments_g6_7`.
+
 Lower-level launcher commands, if you want to bypass `run.sh`:
 
 ```bash
@@ -97,9 +108,10 @@ bash scripts/launch_all_experiments.sh
 ```
 
 This verifies the dataset pack, regenerates `configs/local/*_{fast,full}.yaml`,
-materializes every official full-data study, and starts one master tmux queue.
-The master queue runs the generated per-study GPU scripts sequentially, so
-multiple studies do not compete for the same `CUDA_VISIBLE_DEVICES=2,3` pair.
+materializes every official full-data study, and starts tmux queues. With one
+GPU pair, the master queue runs the generated per-study GPU scripts
+sequentially. With `--gpu-pairs`, each pair gets its own sequential worker queue
+and different pairs run in parallel.
 Fast specs are kept for debugging and are not included in the default official
 queue.
 

@@ -142,6 +142,52 @@ def test_launch_experiments_respects_env_gpu_override(tmp_path):
     assert (study_dir / "run_gpu2_3.sh").exists()
 
 
+def test_launch_experiments_round_robins_env_gpu_pairs(tmp_path):
+    base_config = tmp_path / "base.yaml"
+    output_root = tmp_path / "outputs"
+    checkpoint_root = tmp_path / "checkpoints"
+    spec = tmp_path / "spec.yaml"
+    _write_base_config(base_config)
+    spec.write_text(
+        yaml.safe_dump(
+            {
+                "study_name": "gpu_pairs",
+                "output_root": str(output_root),
+                "checkpoint_root": str(checkpoint_root),
+                "base_config": str(base_config),
+                "defaults": {"gpu": "0", "seed": 7},
+                "experiments": [
+                    {"name": "run0"},
+                    {"name": "run1"},
+                    {"name": "run2"},
+                    {"name": "run3"},
+                    {"name": "run4"},
+                ],
+            },
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+    env = os.environ.copy()
+    env["EVOCO_GPU_PAIRS"] = "0,1;2,3;4,5;6,7"
+
+    subprocess.run(
+        [sys.executable, "scripts/launch_experiments.py", "--spec", str(spec)],
+        check=True,
+        text=True,
+        capture_output=True,
+        env=env,
+    )
+
+    study_dir = output_root / "gpu_pairs"
+    manifest = yaml.safe_load((study_dir / "launch_manifest.yaml").read_text(encoding="utf-8"))
+    assert [run["gpu"] for run in manifest["runs"]] == ["0,1", "2,3", "4,5", "6,7", "0,1"]
+    assert (study_dir / "run_gpu0_1.sh").exists()
+    assert (study_dir / "run_gpu2_3.sh").exists()
+    assert (study_dir / "run_gpu4_5.sh").exists()
+    assert (study_dir / "run_gpu6_7.sh").exists()
+
+
 def test_launch_experiments_launch_tmux_invokes_generated_launcher(tmp_path):
     base_config = tmp_path / "base.yaml"
     output_root = tmp_path / "outputs"
@@ -511,6 +557,83 @@ exit 0
     assert "new -d -s unit_all" in calls
     assert master_script.exists()
     assert str(output_root / "all_launch" / "run_gpu0.sh") in master_script.read_text(encoding="utf-8")
+
+
+def test_launch_all_experiments_gpu_pairs_start_worker_queues(tmp_path):
+    base_config = tmp_path / "base.yaml"
+    output_root = tmp_path / "outputs"
+    checkpoint_root = tmp_path / "checkpoints"
+    spec = tmp_path / "spec.yaml"
+    fake_bin = tmp_path / "bin"
+    tmux_calls = tmp_path / "tmux_calls.txt"
+    master_dir = tmp_path / "master"
+    fake_bin.mkdir()
+    fake_tmux = fake_bin / "tmux"
+    fake_tmux.write_text(
+        f"""#!/usr/bin/env bash
+echo "$@" >> {str(tmux_calls)!r}
+if [[ "$1" == "has-session" ]]; then
+  exit 1
+fi
+exit 0
+""",
+        encoding="utf-8",
+    )
+    fake_tmux.chmod(0o755)
+    _write_base_config(base_config)
+    spec.write_text(
+        yaml.safe_dump(
+            {
+                "study_name": "all_pairs",
+                "output_root": str(output_root),
+                "checkpoint_root": str(checkpoint_root),
+                "base_config": str(base_config),
+                "defaults": {"gpu": "0", "seed": 7},
+                "experiments": [
+                    {"name": "one"},
+                    {"name": "two"},
+                    {"name": "three"},
+                    {"name": "four"},
+                ],
+            },
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+    env = {
+        **os.environ,
+        "PATH": f"{fake_bin}{os.pathsep}{os.environ.get('PATH', '')}",
+        "EVOCO_MASTER_OUTPUT_DIR": str(master_dir),
+        "EVOCO_TMUX_SESSION": "unit_all",
+    }
+
+    result = subprocess.run(
+        [
+            "bash",
+            "scripts/launch_all_experiments.sh",
+            "--skip-verify",
+            "--no-generate-configs",
+            "--gpu-pairs",
+            "0,1;2,3",
+            "--spec",
+            str(spec),
+        ],
+        check=True,
+        text=True,
+        capture_output=True,
+        env=env,
+    )
+
+    calls = tmux_calls.read_text(encoding="utf-8")
+    worker0 = master_dir / "workers" / "run_gpu0_1_queue.sh"
+    worker1 = master_dir / "workers" / "run_gpu2_3_queue.sh"
+    assert "Started 2 GPU-pair worker queue(s)." in result.stdout
+    assert "new -d -s unit_all_g0_1" in calls
+    assert "new -d -s unit_all_g2_3" in calls
+    assert worker0.exists()
+    assert worker1.exists()
+    assert str(output_root / "all_pairs" / "run_gpu0_1.sh") in worker0.read_text(encoding="utf-8")
+    assert str(output_root / "all_pairs" / "run_gpu2_3.sh") in worker1.read_text(encoding="utf-8")
 
 
 def test_official_popqa_experiment_specs_cover_main_studies():

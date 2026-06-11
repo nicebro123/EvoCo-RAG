@@ -233,6 +233,18 @@ bash run.sh train \
   --data-root ../rag_assets/rag_data/evoco_dataset_pack
 ```
 
+For an 8-GPU machine, use 2 GPUs as one experiment worker and run four workers
+in parallel:
+
+```bash
+bash run.sh train \
+  --gpu-pairs '0,1;2,3;4,5;6,7' \
+  --data-root ../rag_assets/rag_data/evoco_dataset_pack
+```
+
+This keeps each run on a 2-GPU unit while distributing the official queue across
+the available GPU pairs.
+
 Or run smoke test first and then launch training automatically:
 
 ```bash
@@ -241,12 +253,27 @@ bash run.sh all \
   --data-root ../rag_assets/rag_data/evoco_dataset_pack
 ```
 
-`run.sh train` starts a tmux session named `evoco_all_experiments`.
+With `--gpus`, `run.sh train` starts one tmux session named
+`evoco_all_experiments`. With `--gpu-pairs`, it starts one worker session per
+GPU pair, for example:
+
+```text
+evoco_all_experiments_g0_1
+evoco_all_experiments_g2_3
+evoco_all_experiments_g4_5
+evoco_all_experiments_g6_7
+```
 
 Attach:
 
 ```bash
 tmux attach -t evoco_all_experiments
+```
+
+For an 8-GPU run, attach to the worker you want to inspect:
+
+```bash
+tmux attach -t evoco_all_experiments_g0_1
 ```
 
 Detach without stopping training:
@@ -270,7 +297,8 @@ Full experiment outputs:
 
 The official queue uses full datasets and runs PopQA sweeps, PopQA
 hyperparameter studies, multi-dataset checks, and mechanism ablations. Detailed
-study specs live in `configs/experiments/`.
+study specs live in `configs/experiments/`. A short official experiment matrix
+is available at [docs/官方全量实验说明.md](docs/官方全量实验说明.md).
 
 ---
 

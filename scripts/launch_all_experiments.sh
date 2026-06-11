@@ -5,6 +5,7 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PYTHON_BIN="${EVOCO_PYTHON:-python}"
 DATA_ROOT="${EVOCO_DATA_ROOT:-../rag_assets/rag_data/evoco_dataset_pack}"
 VERIFY_MAX_ROWS="${EVOCO_VERIFY_MAX_ROWS:-5}"
+GPU_PAIRS="${EVOCO_GPU_PAIRS:-}"
 VERIFY_DATA=1
 GENERATE_CONFIGS=1
 LAUNCH_TMUX=1
@@ -35,6 +36,7 @@ for debugging and can be passed explicitly with --spec.
 Options:
   --data-root PATH       Dataset pack path. Default: ../rag_assets/rag_data/evoco_dataset_pack
   --spec PATH            Add one experiment spec. Repeatable. Defaults to all official specs.
+  --gpu-pairs LIST       Semicolon-separated GPU workers, e.g. '0,1;2,3;4,5;6,7'.
   --dry-run              Generate configs/scripts only; do not start tmux.
   --launch-tmux, --tmux  Start the master tmux queue. Default.
   --overwrite            Forward to scripts/launch_experiments.py.
@@ -46,6 +48,8 @@ Environment:
   EVOCO_PYTHON           Python executable to use. Default: python.
   EVOCO_DATA_ROOT        Dataset pack path, overridden by --data-root.
   EVOCO_GPUS             Override every spec GPU list, e.g. 0,1. Default: spec value.
+  EVOCO_GPU_PAIRS        Round-robin runs across GPU workers, e.g. 0,1;2,3;4,5;6,7.
+                         Takes precedence over EVOCO_GPUS.
   EVOCO_VERIFY_MAX_ROWS  Rows per split checked by verification. Default: 5.
   EVOCO_MASTER_OUTPUT_DIR  Master queue directory. Default: ../rag_assets/outputs/experiments/evoco_all_experiments.
   EVOCO_TMUX_SESSION     Master tmux session name. Default: evoco_all_experiments.
@@ -68,6 +72,15 @@ while (($#)); do
         exit 2
       fi
       SPECS+=("$2")
+      shift 2
+      ;;
+    --gpu-pairs)
+      if (($# < 2)); then
+        echo "missing value for --gpu-pairs" >&2
+        exit 2
+      fi
+      GPU_PAIRS="$2"
+      export EVOCO_GPU_PAIRS="$GPU_PAIRS"
       shift 2
       ;;
     --dry-run)
@@ -130,6 +143,9 @@ echo "specs:"
 for spec in "${SPECS[@]}"; do
   echo "  - $spec"
 done
+if [[ -n "$GPU_PAIRS" ]]; then
+  echo "gpu_pairs: $GPU_PAIRS"
+fi
 
 if ((VERIFY_DATA)); then
   "$PYTHON_BIN" scripts/verify_dataset_pack.py \
@@ -203,38 +219,99 @@ else
   MASTER_DIR="$ROOT_DIR/$MASTER_DIR_RAW"
 fi
 MASTER_SCRIPT="$MASTER_DIR/run_all_gpu_queues.sh"
+WORKER_DIR="$MASTER_DIR/workers"
 SESSION="${EVOCO_TMUX_SESSION:-evoco_all_experiments}"
 mkdir -p "$MASTER_DIR"
+mkdir -p "$WORKER_DIR"
+rm -f "$WORKER_DIR"/run_gpu*_queue.sh
 
-{
-  echo "#!/usr/bin/env bash"
-  echo "set -euo pipefail"
-  printf "cd %q\n" "$ROOT_DIR"
-  echo
-  for study_dir in "${STUDY_DIRS[@]}"; do
-    found=0
-    for gpu_script in "$study_dir"/run_gpu*.sh; do
-      if [[ ! -f "$gpu_script" ]]; then
-        continue
-      fi
-      found=1
+WORKER_SCRIPTS=()
+for study_dir in "${STUDY_DIRS[@]}"; do
+  found=0
+  for gpu_script in "$study_dir"/run_gpu*.sh; do
+    if [[ ! -f "$gpu_script" ]]; then
+      continue
+    fi
+    found=1
+    worker_name="$(basename "$gpu_script" .sh)"
+    worker_script="$WORKER_DIR/${worker_name}_queue.sh"
+    if [[ ! -f "$worker_script" ]]; then
+      {
+        echo "#!/usr/bin/env bash"
+        echo "set -euo pipefail"
+        printf "cd %q\n" "$ROOT_DIR"
+        echo
+      } > "$worker_script"
+      WORKER_SCRIPTS+=("$worker_script")
+    fi
+    {
       printf "echo %q\n" "running $gpu_script"
       printf "bash %q\n" "$gpu_script"
       echo
-    done
-    if ((found == 0)); then
+    } >> "$worker_script"
+  done
+  if ((found == 0)); then
+    worker_script="$WORKER_DIR/missing_queue.sh"
+    if [[ ! -f "$worker_script" ]]; then
+      {
+        echo "#!/usr/bin/env bash"
+        echo "set -euo pipefail"
+      } > "$worker_script"
+      WORKER_SCRIPTS+=("$worker_script")
+    fi
+    {
       printf "echo %q\n" "missing generated run_gpu*.sh under $study_dir"
       echo "exit 1"
+    } >> "$worker_script"
+  fi
+done
+
+if ((${#WORKER_SCRIPTS[@]} == 0)); then
+  echo "no generated run_gpu*.sh scripts found" >&2
+  exit 1
+fi
+
+for worker_script in "${WORKER_SCRIPTS[@]}"; do
+  chmod +x "$worker_script"
+done
+
+if ((${#WORKER_SCRIPTS[@]} == 1)); then
+  cp "${WORKER_SCRIPTS[0]}" "$MASTER_SCRIPT"
+  chmod +x "$MASTER_SCRIPT"
+  if tmux has-session -t "$SESSION" 2>/dev/null; then
+    echo "tmux session already exists: $SESSION"
+    echo "attach with: tmux attach -t $SESSION"
+  else
+    tmux new -d -s "$SESSION" "bash $(printf "%q" "$MASTER_SCRIPT")"
+    echo "Started master tmux queue: $SESSION"
+    echo "attach with: tmux attach -t $SESSION"
+  fi
+else
+  {
+    echo "#!/usr/bin/env bash"
+    echo "set -euo pipefail"
+    echo "echo 'multi-pair worker queues are launched as separate tmux sessions:'"
+    for worker_script in "${WORKER_SCRIPTS[@]}"; do
+      worker_name="$(basename "$worker_script" _queue.sh)"
+      session_suffix="${worker_name#run_gpu}"
+      worker_session="${SESSION}_g${session_suffix}"
+      printf "echo %q\n" "  tmux attach -t $worker_session"
+    done
+  } > "$MASTER_SCRIPT"
+  chmod +x "$MASTER_SCRIPT"
+
+  for worker_script in "${WORKER_SCRIPTS[@]}"; do
+    worker_name="$(basename "$worker_script" _queue.sh)"
+    session_suffix="${worker_name#run_gpu}"
+    worker_session="${SESSION}_g${session_suffix}"
+    if tmux has-session -t "$worker_session" 2>/dev/null; then
+      echo "tmux session already exists: $worker_session"
+      echo "attach with: tmux attach -t $worker_session"
+    else
+      tmux new -d -s "$worker_session" "bash $(printf "%q" "$worker_script")"
+      echo "Started worker tmux queue: $worker_session"
+      echo "attach with: tmux attach -t $worker_session"
     fi
   done
-} > "$MASTER_SCRIPT"
-chmod +x "$MASTER_SCRIPT"
-
-if tmux has-session -t "$SESSION" 2>/dev/null; then
-  echo "tmux session already exists: $SESSION"
-  echo "attach with: tmux attach -t $SESSION"
-else
-  tmux new -d -s "$SESSION" "bash $(printf "%q" "$MASTER_SCRIPT")"
-  echo "Started master tmux queue: $SESSION"
-  echo "attach with: tmux attach -t $SESSION"
+  echo "Started ${#WORKER_SCRIPTS[@]} GPU-pair worker queue(s)."
 fi

@@ -5,6 +5,7 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PYTHON_BIN="${EVOCO_PYTHON:-python}"
 DATA_ROOT="${EVOCO_DATA_ROOT:-../rag_assets/rag_data/evoco_dataset_pack}"
 GPUS="${EVOCO_GPUS:-${CUDA_VISIBLE_DEVICES:-2,3}}"
+GPU_PAIRS="${EVOCO_GPU_PAIRS:-}"
 RUN_ID="${EVOCO_RUN_ID:-$(date +%Y%m%d_%H%M%S)}"
 VERIFY_MAX_ROWS="${EVOCO_VERIFY_MAX_ROWS:-5}"
 
@@ -40,6 +41,8 @@ Modes:
 Options:
   --data-root PATH       Dataset pack path. Default: ../rag_assets/rag_data/evoco_dataset_pack
   --gpus LIST            GPUs for the smoke test and full training. Default: 2,3
+  --gpu-pairs LIST       Semicolon-separated 2-GPU workers for full training,
+                         e.g. '0,1;2,3;4,5;6,7'. Test uses the first pair.
   --run-id ID            Stable id for the smoke-test output path. Default: timestamp
   --skip-verify          Skip dataset-pack verification.
   --no-generate-configs  Reuse existing configs/local/*.yaml instead of regenerating.
@@ -52,6 +55,7 @@ Environment:
   EVOCO_PYTHON           Python executable. Default: python
   EVOCO_DATA_ROOT        Dataset pack path.
   EVOCO_GPUS             GPU list, e.g. 2,3.
+  EVOCO_GPU_PAIRS        Multi-worker GPU pairs, e.g. 0,1;2,3;4,5;6,7.
   EVOCO_RUN_ID           Smoke-test run id.
   EVOCO_VERIFY_MAX_ROWS  Rows per split checked by verification. Default: 5.
 
@@ -77,6 +81,14 @@ while (($#)); do
         exit 2
       fi
       GPUS="$2"
+      shift 2
+      ;;
+    --gpu-pairs)
+      if (($# < 2)); then
+        echo "missing value for --gpu-pairs" >&2
+        exit 2
+      fi
+      GPU_PAIRS="$2"
       shift 2
       ;;
     --run-id)
@@ -177,10 +189,17 @@ run_code_checks() {
 
 official_dry_run() {
   log "dry-run official full-data experiment queue"
-  EVOCO_GPUS="$GPUS" bash scripts/launch_all_experiments.sh \
-    --dry-run \
-    --skip-verify \
-    --no-generate-configs
+  if [[ -n "$GPU_PAIRS" ]]; then
+    EVOCO_GPU_PAIRS="$GPU_PAIRS" bash scripts/launch_all_experiments.sh \
+      --dry-run \
+      --skip-verify \
+      --no-generate-configs
+  else
+    EVOCO_GPUS="$GPUS" bash scripts/launch_all_experiments.sh \
+      --dry-run \
+      --skip-verify \
+      --no-generate-configs
+  fi
 }
 
 preflight() {
@@ -191,6 +210,10 @@ preflight() {
 }
 
 smoke_test() {
+  local smoke_gpus="$GPUS"
+  if [[ -n "$GPU_PAIRS" ]]; then
+    smoke_gpus="${GPU_PAIRS%%;*}"
+  fi
   local safe_run_id
   safe_run_id="$(printf '%s' "$RUN_ID" | tr -c 'A-Za-z0-9_.-' '_')"
   local smoke_config="configs/local/run_sh_popqa_standard_debug_${safe_run_id}.yaml"
@@ -209,8 +232,8 @@ smoke_test() {
     --output-dir "$smoke_output" \
     --checkpoint-root "$smoke_checkpoint"
 
-  log "run 16-sample real-model smoke test on GPUs: $GPUS"
-  CUDA_VISIBLE_DEVICES="$GPUS" "$PYTHON_BIN" scripts/train_evoco.py \
+  log "run 16-sample real-model smoke test on GPUs: $smoke_gpus"
+  CUDA_VISIBLE_DEVICES="$smoke_gpus" "$PYTHON_BIN" scripts/train_evoco.py \
     --config "$smoke_config"
 
   log "verify smoke outputs"
@@ -234,10 +257,17 @@ train_official() {
   if ((OVERWRITE)); then
     extra_args+=("--overwrite")
   fi
-  log "start official full-data training in tmux on GPUs: $GPUS"
-  EVOCO_GPUS="$GPUS" CUDA_VISIBLE_DEVICES="$GPUS" bash scripts/launch_all_experiments.sh \
-    --data-root "$DATA_ROOT" \
-    "${extra_args[@]}"
+  if [[ -n "$GPU_PAIRS" ]]; then
+    log "start official full-data training in tmux on GPU pairs: $GPU_PAIRS"
+    EVOCO_GPU_PAIRS="$GPU_PAIRS" bash scripts/launch_all_experiments.sh \
+      --data-root "$DATA_ROOT" \
+      "${extra_args[@]}"
+  else
+    log "start official full-data training in tmux on GPUs: $GPUS"
+    EVOCO_GPUS="$GPUS" CUDA_VISIBLE_DEVICES="$GPUS" bash scripts/launch_all_experiments.sh \
+      --data-root "$DATA_ROOT" \
+      "${extra_args[@]}"
+  fi
 }
 
 case "$MODE" in
