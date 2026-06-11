@@ -54,7 +54,8 @@ git diff --check
 
 The all-study launcher verifies the dataset pack, regenerates local dataset
 configs, materializes every study, and starts one master tmux queue. The default
-queue is sequential so a two-GPU H20 pair is not oversubscribed.
+queue uses full-data configs and runs sequentially so a two-GPU H20 pair is not
+oversubscribed. Fast specs are kept only for debugging/preflight runs.
 
 ```bash
 bash scripts/launch_all_experiments.sh --dry-run
@@ -63,9 +64,9 @@ bash scripts/launch_all_experiments.sh
 
 | Study | Runs | Purpose |
 |---|---:|---|
-| `evoco_popqa_fast_sweep_2gpu` | 5 | Fast PopQAStandard sanity and small ablations |
-| `evoco_popqa_hparam_fast_2gpu` | 10 | Fast hyperparameter search for top-k, audit count, confidence thresholds, and context length |
-| `evoco_multidataset_fast_2gpu` | 5 | Fast checks on PopQAStandard, HotpotQA, NQ, ASQA, and PopQA retrieval |
+| `evoco_popqa_sweep_full_2gpu` | 5 | Full PopQAStandard sweep: top-k, reward, audit switches |
+| `evoco_popqa_hparam_full_2gpu` | 10 | Full hyperparameter exploration for top-k, audit count, confidence thresholds, and context length |
+| `evoco_multidataset_full_2gpu` | 5 | Full checks on PopQAStandard, HotpotQA, NQ, ASQA, and PopQA retrieval |
 | `evoco_popqa_full_sweep_2gpu` | 4 | Selected full PopQAStandard cost/accuracy settings |
 | `evoco_popqa_ablation_full_2gpu` | 8 | Full PopQAStandard mechanism ablations for the paper table |
 

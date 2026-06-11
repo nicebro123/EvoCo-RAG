@@ -25,6 +25,10 @@ python scripts/make_dataset_config.py \
   --data-root ../rag_assets/rag_data/evoco_dataset_pack \
   --all \
   --output-root configs/local
+python scripts/make_dataset_config.py \
+  --data-root ../rag_assets/rag_data/evoco_dataset_pack \
+  --all --full \
+  --output-root configs/local
 ```
 
 Dry-run a study. This writes per-run configs, a manifest, and per-GPU shell
@@ -33,7 +37,7 @@ first and then evaluates the same generated config on the test split:
 
 ```bash
 python scripts/launch_experiments.py \
-  --spec configs/experiments/popqa_fast_sweep_2gpu.yaml
+  --spec configs/experiments/popqa_sweep_full_2gpu.yaml
 ```
 
 Inspect the generated files under:
@@ -61,20 +65,20 @@ Launch sequentially in the current process:
 
 ```bash
 python scripts/launch_experiments.py \
-  --spec configs/experiments/popqa_fast_sweep_2gpu.yaml \
+  --spec configs/experiments/popqa_sweep_full_2gpu.yaml \
   --launch
 ```
 
 Or launch the generated per-GPU script:
 
 ```bash
-bash ../rag_assets/outputs/experiments/evoco_popqa_fast_sweep_2gpu/run_gpu2_3.sh
+bash ../rag_assets/outputs/experiments/evoco_popqa_sweep_full_2gpu/run_gpu2_3.sh
 ```
 
 Start all generated GPU queues in tmux:
 
 ```bash
-bash ../rag_assets/outputs/experiments/evoco_popqa_fast_sweep_2gpu/launch_tmux.sh
+bash ../rag_assets/outputs/experiments/evoco_popqa_sweep_full_2gpu/launch_tmux.sh
 ```
 
 Recommended bash entrypoint for all official experiment studies:
@@ -85,17 +89,19 @@ bash scripts/launch_all_experiments.sh
 ```
 
 This verifies the dataset pack, regenerates `configs/local/*_{fast,full}.yaml`,
-materializes every study, and starts one master tmux queue. The master queue
-runs the generated per-study GPU scripts sequentially, so multiple studies do
-not compete for the same `CUDA_VISIBLE_DEVICES=2,3` pair.
+materializes every official full-data study, and starts one master tmux queue.
+The master queue runs the generated per-study GPU scripts sequentially, so
+multiple studies do not compete for the same `CUDA_VISIBLE_DEVICES=2,3` pair.
+Fast specs are kept for debugging and are not included in the default official
+queue.
 
 Official launcher specs:
 
 | Spec | Runs | Purpose |
 |---|---:|---|
-| `popqa_fast_sweep_2gpu.yaml` | 5 | quick PopQA sanity sweep: top-k, reward, audit switches |
-| `popqa_hparam_fast_2gpu.yaml` | 10 | cheap PopQA hyperparameter search for top-k, audit count, confidence thresholds, context length |
-| `multidataset_fast_2gpu.yaml` | 5 | 512-sample generalization check across converted datasets |
+| `popqa_sweep_full_2gpu.yaml` | 5 | full PopQA sweep: top-k, reward, audit switches |
+| `popqa_hparam_full_2gpu.yaml` | 10 | full PopQA hyperparameter search for top-k, audit count, confidence thresholds, context length |
+| `multidataset_full_2gpu.yaml` | 5 | full generalization check across converted datasets |
 | `popqa_full_sweep_2gpu.yaml` | 4 | selected full PopQA settings for final cost/accuracy comparison |
 | `popqa_ablation_full_2gpu.yaml` | 8 | full PopQA mechanism ablations for the main paper table |
 
@@ -108,7 +114,7 @@ bash scripts/launch_tmux.sh
 Use a different spec:
 
 ```bash
-bash scripts/launch_tmux.sh configs/experiments/multidataset_fast_2gpu.yaml
+bash scripts/launch_tmux.sh configs/experiments/multidataset_full_2gpu.yaml
 ```
 
 Generate configs and scripts without starting tmux:
@@ -121,7 +127,7 @@ Equivalent Python entrypoint:
 
 ```bash
 python scripts/launch_experiments.py \
-  --spec configs/experiments/popqa_fast_sweep_2gpu.yaml \
+  --spec configs/experiments/popqa_sweep_full_2gpu.yaml \
   --launch-tmux
 ```
 

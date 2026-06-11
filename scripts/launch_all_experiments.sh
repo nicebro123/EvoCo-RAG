@@ -11,9 +11,9 @@ LAUNCH_TMUX=1
 EXTRA_ARGS=()
 SPECS=()
 DEFAULT_SPECS=(
-  "configs/experiments/popqa_fast_sweep_2gpu.yaml"
-  "configs/experiments/popqa_hparam_fast_2gpu.yaml"
-  "configs/experiments/multidataset_fast_2gpu.yaml"
+  "configs/experiments/popqa_sweep_full_2gpu.yaml"
+  "configs/experiments/popqa_hparam_full_2gpu.yaml"
+  "configs/experiments/multidataset_full_2gpu.yaml"
   "configs/experiments/popqa_full_sweep_2gpu.yaml"
   "configs/experiments/popqa_ablation_full_2gpu.yaml"
 )
@@ -28,6 +28,9 @@ Default behavior:
   2. regenerate configs/local fast + full configs;
   3. materialize all experiment specs;
   4. start one tmux session that runs all generated GPU queues sequentially.
+
+The default official specs use full-data configs. Fast specs remain available
+for debugging and can be passed explicitly with --spec.
 
 Options:
   --data-root PATH       Dataset pack path. Default: ../rag_assets/rag_data/evoco_dataset_pack

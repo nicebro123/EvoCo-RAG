@@ -239,15 +239,15 @@ and each run trains then auto-evaluates.
 ```bash
 # 1) dry run: write per-run configs + commands, inspect them
 python scripts/launch_experiments.py \
-  --spec configs/experiments/popqa_fast_sweep_2gpu.yaml
+  --spec configs/experiments/popqa_sweep_full_2gpu.yaml
 
 # 2) launch sequentially
 python scripts/launch_experiments.py \
-  --spec configs/experiments/popqa_fast_sweep_2gpu.yaml --launch
+  --spec configs/experiments/popqa_sweep_full_2gpu.yaml --launch
 
 # or start the generated tmux queues for long sweeps
 bash scripts/launch_tmux.sh
-bash scripts/launch_tmux.sh configs/experiments/multidataset_fast_2gpu.yaml
+bash scripts/launch_tmux.sh configs/experiments/multidataset_full_2gpu.yaml
 bash scripts/launch_tmux.sh --dry-run
 
 # one command for all official studies
@@ -263,17 +263,19 @@ format live under `configs/experiments/` (see its local `README.md`).
 
 `scripts/launch_all_experiments.sh` first verifies the dataset pack and
 regenerates `configs/local` from `../rag_assets/rag_data/evoco_dataset_pack`.
-It then materializes all official launcher specs and starts a single master tmux
-session named `evoco_all_experiments`. The studies run sequentially inside that
-session to avoid multiple processes competing for the same two H20 GPUs.
+It then materializes all official full-data launcher specs and starts a single
+master tmux session named `evoco_all_experiments`. The studies run sequentially
+inside that session to avoid multiple processes competing for the same two H20
+GPUs. Fast specs remain available for debugging, but they are not part of the
+default official queue.
 
 The default all-study queue contains:
 
 | Study | Runs | Role |
 |---|---:|---|
-| `evoco_popqa_fast_sweep_2gpu` | 5 | fast PopQA sanity and small ablation checks |
-| `evoco_popqa_hparam_fast_2gpu` | 10 | fast PopQA hyperparameter exploration |
-| `evoco_multidataset_fast_2gpu` | 5 | fast multi-dataset generalization check |
+| `evoco_popqa_sweep_full_2gpu` | 5 | full PopQA top-k/reward/audit sweep |
+| `evoco_popqa_hparam_full_2gpu` | 10 | full PopQA hyperparameter exploration |
+| `evoco_multidataset_full_2gpu` | 5 | full multi-dataset generalization check |
 | `evoco_popqa_full_sweep_2gpu` | 4 | selected full PopQA cost/accuracy settings |
 | `evoco_popqa_ablation_full_2gpu` | 8 | full PopQA mechanism ablations |
 

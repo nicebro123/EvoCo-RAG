@@ -101,10 +101,10 @@ scripts/build_seed_replay.py  CPU-only seed replay
 scripts/launch_all_experiments.sh  one-command tmux launcher for official studies
 ```
 
-The default all-study launcher covers PopQAStandard fast sweeps, PopQAStandard
-hyperparameter exploration, multi-dataset fast checks, full PopQA selected
-settings, and full PopQA mechanism ablations. Use `--spec` to run a single
-study.
+The default all-study launcher uses **full-data** configs for every official
+study: PopQAStandard sweeps, PopQAStandard hyperparameter exploration,
+multi-dataset checks, selected PopQA settings, and PopQA mechanism ablations.
+Fast specs remain available for debugging; use `--spec` to run a single study.
 
 ---
 

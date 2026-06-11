@@ -3,7 +3,7 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PYTHON_BIN="${EVOCO_PYTHON:-python}"
-SPEC="configs/experiments/popqa_fast_sweep_2gpu.yaml"
+SPEC="configs/experiments/popqa_sweep_full_2gpu.yaml"
 MODE="--launch-tmux"
 EXTRA_ARGS=()
 
@@ -11,10 +11,10 @@ usage() {
   cat <<'EOF'
 Usage:
   bash scripts/launch_tmux.sh [SPEC] [options]
-  bash scripts/launch_tmux.sh --spec configs/experiments/popqa_fast_sweep_2gpu.yaml
+  bash scripts/launch_tmux.sh --spec configs/experiments/popqa_sweep_full_2gpu.yaml
 
 Defaults:
-  SPEC: configs/experiments/popqa_fast_sweep_2gpu.yaml
+  SPEC: configs/experiments/popqa_sweep_full_2gpu.yaml
   mode: generate configs and start tmux queues
 
 Options:
