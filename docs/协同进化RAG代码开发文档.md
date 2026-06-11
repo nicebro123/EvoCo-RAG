@@ -1,5 +1,10 @@
 # EvoCo-RAG 代码开发文档
 
+> 阅读定位：本文是工程设计与实现记录，不是复现入口。快速复现请从
+> [README.md](../README.md) 和 [docs/README.md](README.md) 开始；数据、训练、
+> 测试分别对应 [DATASETS.md](DATASETS.md)、[EXPERIMENTS.md](EXPERIMENTS.md)、
+> [TESTING.md](TESTING.md)。
+
 ## 1. 开发目标
 
 本文档面向当前 `CoRAG-D63F` 代码，将“证据合约驱动的大小模型协同进化 RAG”方案落地为可实现的工程计划。
@@ -1245,8 +1250,8 @@ Audited reranker training
 | `scripts/eval_evoco.py` | §7、§9 | 完成：测试集评估入口、adapter root/latest 解析 |
 | `scripts/inspect_replay.py` | §13 | 完成：replay 分布与指标查看 |
 | `scripts/run_ablations.py` | §7.2 | 完成：实验矩阵跑批、独立 checkpoint root、汇总对比表 |
-| `configs/evoco_popqa.yaml`、`configs/debug.yaml` | §8 | 完成：全量 + debug 配置 |
-| `tests/test_*.py`、`pytest.ini` | §12 | 完成：57 passed, 4 skipped；pytest 不误收集重模型脚本 |
+| `configs/evoco_popqa.yaml`、`configs/debug.yaml`、`configs/experiments/*.yaml` | §8 | 完成：全量、debug、policy、多数据集 fast、PopQA full/ablation/hparam study specs |
+| `tests/test_*.py`、`pytest.ini` | §12 | 完成：CPU 环境 80 passed, 4 skipped；GPU/torch 环境预期 84 passed |
 
 ### 17.2 与文档约定的两处对齐
 
@@ -1255,18 +1260,18 @@ Audited reranker training
 
 ### 17.3 当前原型范围外的后续增强
 
-当前版本完整实现 document-level EvoCo-RAG 闭环。以下属于后续增强，不影响当前代码按照“证据合约 + 审计 + 规则验证 + 分解 reward + replay + 双 LoRA 训练入口”的主链路运行：
+当前版本完整实现 document-level EvoCo-RAG 闭环，并已补齐小模型 policy heads、多任务 loss、批量 audit/SFT、多数据集配置生成和官方实验矩阵。以下属于后续增强，不影响当前代码按照“证据合约 + 审计 + 规则验证 + 分解 reward + replay + 双 LoRA 训练入口”的主链路运行：
 
-- 小模型可训练的 evidence head / action head：当前由启发式接口提供，后续可替换为可训练 head。
-- 小模型多任务 loss 中的 `L_evi / L_act / L_calib`：当前训练入口先做 ranking LoRA，后续在上机实验稳定后扩展。
-- token span 级证据选择：当前为句子级启发式，后续按 §14.2 的渐进路线升级。
-- TRL GRPOTrainer 完整 rollout：当前提供无副作用 reward 函数和 SFT 训练，完整 GRPO rollout 留到 GPU 环境联调。
+- token/span 级证据选择：当前为文档级 + 句子启发式 span，后续按 §14.2 的渐进路线升级到可验证 span。
+- 偏好/奖励优化：当前提供批量 SFT、无副作用 reward 函数和 GRPO reward 接口，完整 DPO/ORPO/GRPO rollout 留到 GPU 环境联调。
+- 多轮稳定性控制：当前支持 round checkpoint、trend plots 和 partial resume，后续补 drift monitor、early stop 和 rollback。
+- 结果汇总工具：当前已有多 study launcher，后续补统一 `collect_results.py` 生成论文表格。
 
 ### 17.4 本机已验证 / 待 GPU 验证
 
 - 本机 CPU 已验证：schema 校验、四象限归因、verifier、replay、JSON 解析、权重路径解析、指标、batch audit 路径、batch SFT 假模型路径、完整 no-model 消融跑批。
-- 待 H20 验证：reranker/LLM 加载、bf16 训练、真实审计 JSON 成功率、双 LoRA 多轮协同进化收敛。
-  入口：`CUDA_VISIBLE_DEVICES=2,3 python scripts/train_evoco.py --config configs/debug.yaml`（先 16 条），通过后切 `configs/evoco_popqa_fast.yaml`（512 条快速验证），最后再切 `configs/evoco_popqa.yaml` 或 `configs/evoco_popqa_policy.yaml`。
+- 待 H20 验证：reranker/LLM 加载、bf16 训练、真实审计 JSON 成功率、双 LoRA 多轮协同进化收敛和完整 full 消融表。
+  入口：先生成 `configs/local/*.yaml`，再运行 `CUDA_VISIBLE_DEVICES=2,3 python scripts/train_evoco.py --config configs/local/popqa_standard_debug.yaml`（16 条），通过后切 `configs/local/popqa_standard_fast.yaml`（512 条快速验证），最后用 `bash scripts/launch_all_experiments.sh` 跑官方实验矩阵。
 
 ## 18. 论文创新 TODO 对应的代码开发 TODO
 
@@ -1276,27 +1281,27 @@ Audited reranker training
 
 | 编号 | 论文创新点 | 代码开发目标 | 当前状态 | 主要文件 | 验收指标 |
 |---|---|---|---|---|---|
-| ECR-1 | 可训练的小模型证据-动作-置信度策略 | 在 reranker encoder 上增加 evidence/action/confidence heads，并接入多任务训练 | **代码完成，待实验成表**：head、配置、保存/加载、manifest、多任务 loss 和训练指标均已落地，默认主配置仍关闭 | `evoco_rag/small_model.py`、`evoco_rag/trainers/small_trainer.py`、`evoco_rag/config.py`、`evoco_rag/schemas.py` | 还需用 `configs/debug_policy.yaml` / `configs/evoco_popqa_policy.yaml` 做 H20 实验表 |
+| ECR-1 | 可训练的小模型证据-动作-置信度策略 | 在 reranker encoder 上增加 evidence/action/confidence heads，并接入多任务训练 | **代码完成，待实验成表**：head、配置、保存/加载、manifest、多任务 loss 和训练指标均已落地；生成的 dataset configs 默认启用 policy heads | `evoco_rag/small_model.py`、`evoco_rag/trainers/small_trainer.py`、`evoco_rag/config.py`、`evoco_rag/schemas.py` | 用 `configs/experiments/popqa_ablation_full_2gpu.yaml` 的 `evoco_full` vs `no_policy_heads` 和 fast debug 结果形成 H20 表 |
 | ECR-2 | 责任归因式 credit assignment | 将四象限归因扩展为可统计、可消融、可追踪的训练信号 | **已完成代码落地**：归因字段、credit weight、误奖励率、metrics/replay/inspect 输出已实现 | `evoco_rag/rewards.py`、`evoco_rag/verifier.py`、`evoco_rag/replay_buffer.py`、`evoco_rag/evaluation/metrics.py` | 还需真实模型消融表验证 answer-only reward 对照 |
 | ECR-3 | 可靠审计与抗噪声自训练 | 增强审计一致性、trust weight、人工抽样导出和 replay 降噪 | **已完成核心统计**：多候选摘要、`self_consistency`、`trust_components`、trust summary 已实现 | `evoco_rag/large_model.py`、`evoco_rag/auditor.py`、`evoco_rag/verifier.py`、`evoco_rag/replay_buffer.py` | 还需人工抽样导出和人工一致率评估 |
-| ECR-4 | 成本感知动态检索动作 | 让 `answer_now/retrieve_more/rewrite_query/ask_auditor` 从启发式逐步变为可学习策略 | **代码完成，待实验成表**：已加入 `action_mode=heuristic/policy/hybrid`、policy action 置信覆盖、action cost penalty 和 accuracy-cost Pareto 指标 | `evoco_rag/contract.py`、`evoco_rag/small_model.py`、`evoco_rag/trainers/small_trainer.py`、`evoco_rag/evaluation/metrics.py` | 还需用 `configs/evoco_popqa_policy.yaml` 对比固定 top-k / heuristic / hybrid policy 的 accuracy-cost Pareto |
+| ECR-4 | 成本感知动态检索动作 | 让 `answer_now/retrieve_more/rewrite_query/ask_auditor` 从启发式逐步变为可学习策略 | **代码完成，待实验成表**：已加入 `action_mode=heuristic/policy/hybrid`、policy action 置信覆盖、action cost penalty 和 accuracy-cost Pareto 指标 | `evoco_rag/contract.py`、`evoco_rag/small_model.py`、`evoco_rag/trainers/small_trainer.py`、`evoco_rag/evaluation/metrics.py` | 用 `configs/experiments/popqa_hparam_fast_2gpu.yaml` 的 action confidence sweep 和 `popqa_ablation_full_2gpu.yaml` 的 `no_action_policy` 对比 accuracy-cost Pareto |
 | ECR-5 | 多粒度证据合约 | 从 document-level 扩展到 sentence/span-level，并支持多跳证据组合 | **待做**：当前仍是文档级 + 句子启发式 span | `evoco_rag/contract.py`、`evoco_rag/schemas.py`、`evoco_rag/text_utils.py`、`evoco_rag/verifier.py` | citation correctness、span support、multi-hop coverage 可输出 |
 | ECR-6 | 大模型忠实生成与审计格式协同优化 | 在 SFT 基础上接入偏好/奖励优化，降低 unsupported answer | **部分完成**：批量 SFT、批量 audit generation 和 GRPO reward 函数接口已落地，尚未完整偏好优化/GRPO rollout | `evoco_rag/trainers/large_trainer.py`、`evoco_rag/large_model.py`、`evoco_rag/auditor.py` | JSON parse rate 提升；unsupported answer rate 下降 |
 | ECR-7 | 多轮协同进化稳定性 | 增加 round 级曲线、漂移监控、replay 质量统计和 early stop | **待做**：当前支持多轮 checkpoint，但缺少 drift/early-stop/plot 脚本 | `evoco_rag/trainers/coevolution_trainer.py`、`evoco_rag/replay_buffer.py`、`evoco_rag/evaluation/evaluator.py` | round-by-round accuracy/support/cost 曲线完整，退化时可停止 |
-| ECR-8 | 跨数据集和强基线验证 | 扩展数据加载、baseline runner、消融矩阵和结果汇总 | **待做**：当前主要支持 PopQA | `evoco_rag/data.py`、`configs/`、`scripts/run_ablations.py`、`evoco_rag/evaluation/metrics.py` | PopQA + NQ + HotpotQA/2Wiki + ASQA 至少两类任务可运行 |
+| ECR-8 | 跨数据集和强基线验证 | 扩展数据加载、baseline runner、消融矩阵和结果汇总 | **部分完成，待跑数成表**：dataset pack 与配置生成已覆盖 PopQAStandard、HotpotQA、NQ、ASQA、PopQA retrieval；`multidataset_fast_2gpu.yaml` 已提供 fast 入口 | `evoco_rag/data.py`、`configs/`、`scripts/run_ablations.py`、`evoco_rag/evaluation/metrics.py` | 还需 full runs、强基线和统一结果汇总表 |
 
 ### 18.2 模块级 TODO
 
 | 编号 | 状态 | 方法与模块 TODO | 需要新增或修改的配置 | 需要新增的测试或脚本 |
 |---|---|---|---|---|
-| ECR-1 | **代码完成，待实验成表** | 已新增 `SmallPolicyHeads`、`evidence_head/action_head/confidence_head`、`SmallTrainer` 多任务 loss、训练指标、head checkpoint 元数据和 policy 专用配置 | 已新增 `small_policy.use_policy_heads`、`evidence_loss_weight`、`action_loss_weight`、`calibration_loss_weight`；新增 `configs/debug_policy.yaml`、`configs/evoco_popqa_policy.yaml` | 已新增/扩展 `tests/test_small_policy_heads.py`、`tests/test_weights.py`；后续补真实训练回归测试 |
+| ECR-1 | **代码完成，待实验成表** | 已新增 `SmallPolicyHeads`、`evidence_head/action_head/confidence_head`、`SmallTrainer` 多任务 loss、训练指标、head checkpoint 元数据和 policy 专用配置 | 已新增 `small_policy.use_policy_heads`、`evidence_loss_weight`、`action_loss_weight`、`calibration_loss_weight`；官方消融使用 `popqa_ablation_full_2gpu.yaml` 的 `no_policy_heads` 对照 | 已新增/扩展 `tests/test_small_policy_heads.py`、`tests/test_weights.py`；后续补真实训练回归测试 |
 | ECR-2 | **已完成代码落地** | 已新增 `attribution_case`、`small_credit_weight`、`large_credit_weight`、误奖励统计；`ReplayBuffer`、`metrics`、`inspect_replay.py` 已支持输出 | 不再需要新增配置；后续根据实验需要调整 reward 权重 | 已扩展 `tests/test_rewards.py`、`tests/test_replay_buffer.py`、`tests/test_metrics.py` |
 | ECR-3 | **核心统计已完成** | 已保存 audit candidate 摘要、候选得分、一致性；已拆分 `trust_components`；剩余是人工抽样导出和人工一致率评估 | 已复用 `runtime.num_audit_candidates`；后续可增加 `runtime.audit_trust_threshold`、`runtime.trust_filter_mode` | 已扩展 `tests/test_auditor.py`、`tests/test_verifier.py`；后续新增 `scripts/export_audit_review.py` |
-| ECR-4 | **代码完成，待实验成表** | 已保留启发式 action 作为 teacher，并支持 `heuristic`、`policy`、`hybrid` 三种 action 模式；policy head 输出 action confidence，hybrid 模式可按置信度覆盖启发式；metrics 已输出 action cost 和 accuracy-cost Pareto 点 | 已新增 `contract.action_mode`、`contract.policy_action_min_conf`、`reward.audit_call_cost`、`reward.rewrite_cost`、`reward.retrieve_more_cost` | 已新增 `tests/test_action_policy.py`，并扩展 `tests/test_rewards.py`、`tests/test_metrics.py`；后续新增低成本/高召回实验配置 |
+| ECR-4 | **代码完成，待实验成表** | 已保留启发式 action 作为 teacher，并支持 `heuristic`、`policy`、`hybrid` 三种 action 模式；policy head 输出 action confidence，hybrid 模式可按置信度覆盖启发式；metrics 已输出 action cost 和 accuracy-cost Pareto 点 | 已新增 `contract.action_mode`、`contract.policy_action_min_conf`、`reward.audit_call_cost`、`reward.rewrite_cost`、`reward.retrieve_more_cost`；官方 hparam/full ablation specs 已覆盖低成本、高召回和 no-action-policy 对照 | 已新增 `tests/test_action_policy.py`，并扩展 `tests/test_rewards.py`、`tests/test_metrics.py`；后续补论文表格汇总 |
 | ECR-5 | **待做** | `EvidenceItem` 增加 `sentence_id`、`span_start`、`span_end`、`hop_id`；`text_utils.py` 实现句子切分和 offset；`verifier.py` 校验 quote 与 span | `contract.evidence_granularity`、`contract.max_evidence_hops` | `tests/test_contract_spans.py`、`tests/test_verifier_spans.py` |
 | ECR-6 | **部分完成** | 已完成批量 audit generation、批量 SFT、异常恢复和 eval-time blind generation；剩余是构造 unsupported correction / preference pairs，并可选接入 DPO/ORPO/GRPO | 已新增 `runtime.audit_batch_size`、`training.large_batch_size`；后续可加 `training.large_objective`、`training.preference_loss_weight` | 已新增 `tests/test_large_batching.py`；后续扩展真实 GRPO/DPO dry-run 测试 |
 | ECR-7 | **待做** | `coevolution_trainer.py` 保存每轮质量摘要；`ReplayBuffer` 统计新样本、hard negative、low trust、anchor 覆盖；支持 early stop 和 rollback | `training.early_stop_metric`、`training.early_stop_patience`、`training.rollback_on_degradation` | 新增 `scripts/plot_round_metrics.py`；`tests/test_coevolution_stability.py` |
-| ECR-8 | **待做** | `data.py` 增加 NQ、HotpotQA/2Wiki、ASQA adapter；`run_ablations.py` 支持 vanilla RAG、RAG+reranker、answer-only CoRAG、EvoCo variants；汇总多 seed 结果 | `data.dataset_name` 扩展；新增多数据集 yaml | 新增 `scripts/collect_results.py`；每个 dataset adapter 有 schema 测试 |
+| ECR-8 | **部分完成，待跑数成表** | 数据集统一转换与 loader schema 已完成，`make_dataset_config.py` 可生成 PopQAStandard、HotpotQA、NQ、ASQA、PopQA retrieval 的 fast/full configs；强基线与结果汇总仍待补 | 已新增 dataset registry、`configs/local/*_{fast,full}.yaml` 生成入口、`configs/experiments/multidataset_fast_2gpu.yaml` | 后续新增 `scripts/collect_results.py`；补 full 多数据集 runs 和强基线测试 |
 
 ### 18.3 推荐实现顺序
 
@@ -1304,7 +1309,7 @@ Audited reranker training
 
 1. **已完成代码落地：ECR-1/ECR-2/ECR-3/ECR-4**。下一步需要在真实模型输出上跑消融，形成 policy head、责任归因、审计可靠性和 accuracy-cost Pareto 表。
 2. **下一步优先：ECR-7**。用 round-by-round 曲线证明“协同进化”不是单轮自训练，并增加 early stop / drift 监控降低多轮退化风险。
-3. **随后做 ECR-8**：补强跨数据集和强基线验证，让结论不局限于 PopQA。
+3. **随后做 ECR-8**：fast 多数据集入口已补齐，下一步补 full runs、强基线和统一结果表，让结论不局限于 PopQA。
 4. **最后补强 ECR-5/ECR-6**：扩展证据粒度，并把当前批量 SFT 入口升级为可验证的偏好/奖励优化，支撑更完整的 A 会实验。
 
 最小 CCF-A 冲刺版应至少完成：
@@ -1315,7 +1320,7 @@ Audited reranker training
 [代码完成] ECR-3: 审计可靠性与 trust-weight 消融，仍需人工抽样验证
 [代码完成] ECR-4: 成本感知动态 action，仍需 accuracy-cost Pareto 实验表
 [待做] ECR-7: round-by-round 协同进化曲线
-[待做] ECR-8: 至少两个数据集 + 强消融
+[部分完成] ECR-8: 已有多数据集 fast 入口，仍需 full runs + 强基线 + 统一结果表
 ```
 
 ### 18.4 当前实现进度
@@ -1324,8 +1329,8 @@ Audited reranker training
 
 | 编号 | 当前代码状态 | 还未完成 |
 |---|---|---|
-| ECR-1 | 已增加 `small_policy` 配置段、`SmallPolicyHeads`、policy head 保存/加载元数据、`SmallTrainer` 多任务 loss、训练指标、manifest 记录和 policy 专用配置；默认主配置关闭，不影响现有实验 | 还需要在真实 H20 训练中运行 `configs/debug_policy.yaml` 与 `configs/evoco_popqa_policy.yaml`，验证 action/evidence/calibration 指标是否稳定提升 |
+| ECR-1 | 已增加 `small_policy` 配置段、`SmallPolicyHeads`、policy head 保存/加载元数据、`SmallTrainer` 多任务 loss、训练指标、manifest 记录和 policy 专用配置；生成的 dataset configs 默认启用 policy heads | 还需要在真实 H20 训练中用 `popqa_ablation_full_2gpu.yaml` 对比 `evoco_full` 与 `no_policy_heads`，验证 action/evidence/calibration 指标是否稳定提升 |
 | ECR-2 | 已增加 `attribution_case`、`small_credit_weight`、`large_credit_weight`、`wrong_retriever_reward_if_answer_only`；`metrics`、`ReplayBuffer`、`inspect_replay.py` 均可输出责任归因统计 | 还需要在真实模型审计结果上跑 ablation，形成论文表格 |
 | ECR-3 | 已增加 `LargeAudit.audit_metadata`、多候选审计摘要、`self_consistency`、`RuleVerification.trust_components`、trust summary 指标 | 还需要增加人工抽样导出脚本，并用真实审计样本估计人工一致率 |
-| ECR-4 | 已增加 `contract.action_mode`、policy action confidence、hybrid action 选择逻辑、action cost reward penalty、metrics 中的 `avg_action_cost_penalty` / `accuracy_cost_pareto_point`，policy 配置默认启用 hybrid 模式 | 还需要跑固定 top-k、heuristic action、hybrid policy action 的真实消融，形成 accuracy-cost Pareto 曲线 |
-| ECR-5 至 ECR-8 | 文档已有 TODO，其中 ECR-6 已完成批量 SFT/audit 的工程加速，ECR-7/ECR-8 是下一阶段最关键路径 | ECR-6 尚缺偏好优化/GRPO rollout；ECR-7/ECR-8 尚未作为本轮实现目标 |
+| ECR-4 | 已增加 `contract.action_mode`、policy action confidence、hybrid action 选择逻辑、action cost reward penalty、metrics 中的 `avg_action_cost_penalty` / `accuracy_cost_pareto_point`，policy 配置默认启用 hybrid 模式 | 还需要跑 hparam/action 消融，形成 accuracy-cost Pareto 曲线 |
+| ECR-5 至 ECR-8 | 文档已有 TODO，其中 ECR-6 已完成批量 SFT/audit 的工程加速，ECR-8 已有多数据集 fast 入口，ECR-7 是下一阶段最关键路径 | ECR-6 尚缺偏好优化/GRPO rollout；ECR-7 尚缺 drift/early-stop；ECR-8 尚缺 full 多数据集和强基线结果 |

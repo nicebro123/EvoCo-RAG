@@ -3,6 +3,7 @@
 This document covers **everything you download and place on disk before running
 anything**: the asset directory, the dataset pack, and the base model weights.
 
+- For the full documentation map, see [README.md](README.md).
 - For installing the environment and running training/eval/ablations, see
   [EXPERIMENTS.md](EXPERIMENTS.md).
 - For running tests and CPU-safe code checks, see [TESTING.md](TESTING.md).

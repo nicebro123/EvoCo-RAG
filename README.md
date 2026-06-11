@@ -15,13 +15,15 @@ live in a sibling `../rag_assets/` directory and are never committed.
 
 ## Documentation
 
-Three focused guides — read them in order for a clean reproduction:
+Start with the documentation map if you are new to the repo:
 
 | Guide | Use it when you want to… |
 |---|---|
+| **[docs/README.md](docs/README.md)** | choose the right reproduction / experiment / research document |
 | **[docs/DATASETS.md](docs/DATASETS.md)** | download & place the dataset pack and base model weights |
 | **[docs/EXPERIMENTS.md](docs/EXPERIMENTS.md)** | install the GPU env and run training / eval / ablations / trends |
 | **[docs/TESTING.md](docs/TESTING.md)** | run unit tests and CPU-safe code checks (no GPU) |
+| **[configs/experiments/README.md](configs/experiments/README.md)** | inspect official study specs and launcher behavior |
 
 Design references (not needed to reproduce): `docs/协同进化RAG论文构想.md` (paper
 idea), `docs/协同进化RAG代码开发文档.md` (engineering design).

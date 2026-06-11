@@ -10,7 +10,8 @@ tiers:
   (§6).
 
 For full training/eval, see [EXPERIMENTS.md](EXPERIMENTS.md). For
-datasets/weights, see [DATASETS.md](DATASETS.md).
+datasets/weights, see [DATASETS.md](DATASETS.md). For the full documentation
+map, see [README.md](README.md).
 
 ---
 

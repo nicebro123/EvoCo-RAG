@@ -1,5 +1,9 @@
 # Experiment Configs
 
+For the public quickstart and doc map, start from
+[../../README.md](../../README.md) and [../../docs/README.md](../../docs/README.md).
+This file is the detailed reference for experiment specs and launchers.
+
 This directory contains two experiment styles:
 
 - Standalone training configs: complete EvoCo-RAG configs passed directly to

@@ -4,7 +4,8 @@ This document covers **installing the GPU environment and running training,
 evaluation, ablations, and trend plots**.
 
 Prerequisite: datasets and base weights already placed per
-[DATASETS.md](DATASETS.md). For tests/code checks, see [TESTING.md](TESTING.md).
+[DATASETS.md](DATASETS.md). For the full documentation map, see
+[README.md](README.md). For tests/code checks, see [TESTING.md](TESTING.md).
 
 All commands assume the working directory is the repo root and assets are under
 `../rag_assets/`.
