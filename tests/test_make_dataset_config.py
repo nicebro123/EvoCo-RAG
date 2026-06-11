@@ -61,6 +61,38 @@ def test_make_dataset_config_lists_and_generates_all(tmp_path):
     assert "project:\n  name: \"evoco_alpha_fast\"" in alpha_fast.read_text(encoding="utf-8")
 
 
+def test_make_dataset_config_resolves_rag_data_layout(tmp_path):
+    asset_root = tmp_path / "rag_assets"
+    rag_data = asset_root / "rag_data"
+    data_root = rag_data / "evoco_dataset_pack"
+    output = tmp_path / "alpha.yaml"
+    _write_pack(data_root)
+
+    listed = _run_make_config("--data-root", str(rag_data), "--list")
+    assert "alpha\tALPHA\ttrain=1\ttest=1" in listed.stdout
+
+    _run_make_config(
+        "--data-root",
+        str(asset_root),
+        "--dataset-id",
+        "alpha",
+        "--output",
+        str(output),
+    )
+    text = output.read_text(encoding="utf-8")
+    assert str(data_root / "datasets" / "alpha" / "data_v33" / "Pop" / "train_labels_list.json") in text
+
+
+def test_make_dataset_config_resolves_legacy_sibling_hint(tmp_path):
+    asset_root = tmp_path / "rag_assets"
+    data_root = asset_root / "rag_data" / "evoco_dataset_pack"
+    _write_pack(data_root)
+
+    listed = _run_make_config("--data-root", str(asset_root / "evoco_dataset_pack"), "--list")
+
+    assert "alpha\tALPHA\ttrain=1\ttest=1" in listed.stdout
+
+
 def test_make_dataset_config_single_full_config(tmp_path):
     data_root = tmp_path / "evoco_dataset_pack"
     output = tmp_path / "single.yaml"

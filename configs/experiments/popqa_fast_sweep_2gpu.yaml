@@ -1,7 +1,7 @@
 # SpecFlow-style launcher spec for quick PopQA fast sweeps.
 #
 # Generate the local base config first:
-#   python scripts/make_dataset_config.py --data-root ../rag_assets/evoco_dataset_pack --all --output-root configs/local
+#   python scripts/make_dataset_config.py --data-root ../rag_assets/rag_data/evoco_dataset_pack --all --output-root configs/local
 #
 # Dry run:
 #   python scripts/launch_experiments.py --spec configs/experiments/popqa_fast_sweep_2gpu.yaml

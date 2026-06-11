@@ -60,6 +60,19 @@ def test_verify_dataset_pack_accepts_valid_pack(tmp_path):
     assert summary["datasets"][0]["train_examples"] == 1
 
 
+def test_verify_dataset_pack_resolves_rag_data_layout(tmp_path):
+    asset_root = tmp_path / "rag_assets"
+    data_root = asset_root / "rag_data" / "evoco_dataset_pack"
+    _write_pack(data_root)
+
+    result = _run_verify("--data-root", str(asset_root / "rag_data"), "--json")
+
+    assert result.returncode == 0, result.stderr
+    summary = json.loads(result.stdout)
+    assert summary["data_root"] == str(data_root.resolve())
+    assert summary["datasets"][0]["dataset_id"] == "alpha"
+
+
 def test_verify_dataset_pack_rejects_missing_labels(tmp_path):
     data_root = tmp_path / "evoco_dataset_pack"
     _write_pack(data_root, bad=True)

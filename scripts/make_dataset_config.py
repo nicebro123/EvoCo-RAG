@@ -10,12 +10,12 @@ The dataset pack is expected to contain:
 Example:
 
   python scripts/make_dataset_config.py \
-    --data-root /path/to/evoco_dataset_pack \
+    --data-root ../rag_assets/rag_data/evoco_dataset_pack \
     --dataset-id hotpotqa_distractor \
     --output configs/local/hotpotqa_distractor_fast.yaml
 
   python scripts/make_dataset_config.py \
-    --data-root /path/to/evoco_dataset_pack \
+    --data-root ../rag_assets/rag_data/evoco_dataset_pack \
     --all
 """
 
@@ -23,7 +23,13 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
+import sys
 from pathlib import Path
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from evoco_rag.dataset_pack import DEFAULT_DATA_ROOT, resolve_dataset_pack_root
 
 
 def quote(value: object) -> str:
@@ -146,7 +152,14 @@ ablation:
 
 def parse_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--data-root", required=True, help="Path to evoco_dataset_pack.")
+    parser.add_argument(
+        "--data-root",
+        default=DEFAULT_DATA_ROOT,
+        help=(
+            "Path to evoco_dataset_pack, rag_data, or rag_assets. "
+            f"Default: {DEFAULT_DATA_ROOT}"
+        ),
+    )
     parser.add_argument("--dataset-id", help="Dataset id from dataset_registry.json.")
     parser.add_argument("--all", action="store_true", help="Generate configs for every dataset in the registry.")
     parser.add_argument("--list", action="store_true", help="List available dataset ids and exit.")
@@ -193,7 +206,10 @@ def write_config(output: Path, text: str) -> None:
 
 def main() -> None:
     args = parse_args()
-    data_root = Path(args.data_root).expanduser().resolve()
+    try:
+        data_root = resolve_dataset_pack_root(args.data_root)
+    except FileNotFoundError as exc:
+        raise SystemExit(str(exc)) from exc
     registry = load_registry(data_root)
     if args.list:
         for item in registry.get("datasets", []):

@@ -1,7 +1,7 @@
 # Run the same fast EvoCo-RAG setting on every converted dataset.
 #
 # Generate local dataset configs first:
-#   python scripts/make_dataset_config.py --data-root ../rag_assets/evoco_dataset_pack --all --output-root configs/local
+#   python scripts/make_dataset_config.py --data-root ../rag_assets/rag_data/evoco_dataset_pack --all --output-root configs/local
 #
 # Dry run:
 #   python scripts/launch_experiments.py --spec configs/experiments/multidataset_fast_2gpu.yaml

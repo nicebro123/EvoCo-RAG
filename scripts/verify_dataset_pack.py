@@ -18,6 +18,7 @@ from typing import Any
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from evoco_rag.data import load_test_samples, load_train_samples
+from evoco_rag.dataset_pack import DEFAULT_DATA_ROOT, resolve_dataset_pack_root
 
 
 class PackValidationError(ValueError):
@@ -120,7 +121,14 @@ def validate_dataset(data_root: Path, dataset: dict, max_rows: int | None, loade
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--data-root", required=True, help="Path to extracted evoco_dataset_pack.")
+    parser.add_argument(
+        "--data-root",
+        default=DEFAULT_DATA_ROOT,
+        help=(
+            "Path to extracted evoco_dataset_pack, rag_data, or rag_assets. "
+            f"Default: {DEFAULT_DATA_ROOT}"
+        ),
+    )
     parser.add_argument("--dataset-id", action="append", help="Dataset id to validate. Repeatable; defaults to all.")
     parser.add_argument(
         "--max-rows",
@@ -140,7 +148,10 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = parse_args()
-    data_root = Path(args.data_root).expanduser().resolve()
+    try:
+        data_root = resolve_dataset_pack_root(args.data_root)
+    except FileNotFoundError as exc:
+        raise PackValidationError(str(exc)) from exc
     registry_path = data_root / "dataset_registry.json"
     require(registry_path.exists(), f"dataset registry not found: {registry_path}")
     registry = load_json(registry_path)

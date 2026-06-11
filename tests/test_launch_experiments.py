@@ -14,8 +14,8 @@ project:
   seed: 1
   output_dir: ../rag_assets/outputs/base
 data:
-  train_path: ../rag_assets/evoco_dataset_pack/datasets/popqa_standard/data_v33/Pop/train_labels_list.json
-  test_path: ../rag_assets/evoco_dataset_pack/datasets/popqa_standard/data/Pop/test.json
+  train_path: ../rag_assets/rag_data/evoco_dataset_pack/datasets/popqa_standard/data_v33/Pop/train_labels_list.json
+  test_path: ../rag_assets/rag_data/evoco_dataset_pack/datasets/popqa_standard/data/Pop/test.json
   dataset_name: PopQAStandard
   debug_size: 16
 models:

@@ -18,7 +18,7 @@ Generate local dataset configs first:
 
 ```bash
 python scripts/make_dataset_config.py \
-  --data-root ../rag_assets/evoco_dataset_pack \
+  --data-root ../rag_assets/rag_data/evoco_dataset_pack \
   --all \
   --output-root configs/local
 ```

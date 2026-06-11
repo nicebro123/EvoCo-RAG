@@ -38,12 +38,12 @@ python -m pytest -q
 Expected on a **CPU-only** machine:
 
 ```text
-74 passed, 4 skipped
+77 passed, 4 skipped
 ```
 
 The 4 skipped tests need torch (`tests/test_large_batching.py`,
 `tests/test_small_policy_heads.py`). On a **GPU server with torch installed** they
-run too, so the full suite is **78 passed** — see §6. To see skip reasons:
+run too, so the full suite is **81 passed** — see §6. To see skip reasons:
 
 ```bash
 python -m pytest -q -rs
@@ -87,8 +87,8 @@ These exercise the full data/logic pipeline on CPU, with no model weights.
 Dataset pack validation (needs the pack extracted — see [DATASETS.md](DATASETS.md)):
 
 ```bash
-python scripts/verify_dataset_pack.py --data-root ../rag_assets/evoco_dataset_pack
-python scripts/make_dataset_config.py --data-root ../rag_assets/evoco_dataset_pack --all --output-root configs/local
+python scripts/verify_dataset_pack.py --data-root ../rag_assets/rag_data/evoco_dataset_pack
+python scripts/make_dataset_config.py --data-root ../rag_assets/rag_data/evoco_dataset_pack --all --output-root configs/local
 ```
 
 Experiment launcher dry run (writes configs/commands, no GPU scripts):
@@ -105,7 +105,7 @@ never the 512-sample `_fast` or the full config:
 ```bash
 # Generate a 16-sample debug config once
 python scripts/make_dataset_config.py \
-  --data-root ../rag_assets/evoco_dataset_pack \
+  --data-root ../rag_assets/rag_data/evoco_dataset_pack \
   --dataset-id popqa_standard --debug-size 16 \
   --name evoco_popqa_standard_debug \
   --output configs/local/popqa_standard_debug.yaml \
@@ -134,7 +134,7 @@ things the CPU tier cannot.
 **a) Run the full unit suite** — the 4 torch tests now activate:
 
 ```bash
-python -m pytest -q          # expected: 78 passed
+python -m pytest -q          # expected: 81 passed
 ```
 
 These cover large-model batched audit generation and the small-model
@@ -179,7 +179,7 @@ during these tests. Only after rung 2 looks right do you launch the full run.
 Run before every push:
 
 ```bash
-python -m pytest -q                       # 74 passed, 4 skipped
+python -m pytest -q                       # 77 passed, 4 skipped
 python -m py_compile evoco_rag/*.py evoco_rag/trainers/*.py evoco_rag/evaluation/*.py scripts/*.py
 git diff --check                          # no whitespace/conflict markers
 git status --short --branch               # confirm only intended files

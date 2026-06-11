@@ -19,8 +19,8 @@ lives in a **sibling** directory `../rag_assets/`, never committed to Git.
 parent/
 ├── EvoCo-RAG/        # this Git repo (code only)
 └── rag_assets/       # all assets, NOT in Git
-    ├── rag_data/                 # downloaded dataset tarball
-    ├── evoco_dataset_pack/       # extracted dataset pack
+    ├── rag_data/                 # downloaded tarball + extracted dataset pack
+    │   └── evoco_dataset_pack/
     ├── base_models/              # reranker + generator weights
     ├── checkpoints/              # LoRA adapters per run
     ├── outputs/                  # full-run outputs
@@ -75,7 +75,7 @@ Verify the checksum and unpack:
 ```bash
 cd ../rag_assets/rag_data
 shasum -a 256 -c evoco_dataset_pack.tar.gz.sha256
-tar -xzf evoco_dataset_pack.tar.gz -C ..
+tar -xzf evoco_dataset_pack.tar.gz -C .
 cd ../../EvoCo-RAG
 ```
 
@@ -89,15 +89,17 @@ Layout after extraction:
 
 ```text
 ../rag_assets/
-├── rag_data/                     # the downloaded tarball + checksum
-└── evoco_dataset_pack/
-    ├── dataset_registry.json
-    ├── datasets.yaml
-    └── datasets/
-        └── <dataset_id>/
-            ├── dataset_meta.json
-            ├── data_v33/Pop/train_labels_list.json
-            └── data/Pop/test.json
+└── rag_data/
+    ├── evoco_dataset_pack.tar.gz
+    ├── evoco_dataset_pack.tar.gz.sha256
+    └── evoco_dataset_pack/
+        ├── dataset_registry.json
+        ├── datasets.yaml
+        └── datasets/
+            └── <dataset_id>/
+                ├── dataset_meta.json
+                ├── data_v33/Pop/train_labels_list.json
+                └── data/Pop/test.json
 ```
 
 ---
@@ -132,8 +134,12 @@ fields, and the actual `evoco_rag.data` loader output):
 
 ```bash
 python scripts/verify_dataset_pack.py \
-  --data-root ../rag_assets/evoco_dataset_pack
+  --data-root ../rag_assets/rag_data/evoco_dataset_pack
 ```
+
+The dataset tools also accept the parent directories
+`../rag_assets/rag_data` or `../rag_assets`; they will resolve the extracted
+`evoco_dataset_pack` automatically.
 
 ---
 
@@ -146,14 +152,14 @@ List dataset ids:
 
 ```bash
 python scripts/make_dataset_config.py \
-  --data-root ../rag_assets/evoco_dataset_pack --list
+  --data-root ../rag_assets/rag_data/evoco_dataset_pack --list
 ```
 
 Generate **fast** (512-sample) configs for all datasets:
 
 ```bash
 python scripts/make_dataset_config.py \
-  --data-root ../rag_assets/evoco_dataset_pack \
+  --data-root ../rag_assets/rag_data/evoco_dataset_pack \
   --all --output-root configs/local
 ```
 
@@ -161,7 +167,7 @@ Generate **full**-run configs for all datasets:
 
 ```bash
 python scripts/make_dataset_config.py \
-  --data-root ../rag_assets/evoco_dataset_pack \
+  --data-root ../rag_assets/rag_data/evoco_dataset_pack \
   --all --full --output-root configs/local
 ```
 
@@ -169,7 +175,7 @@ Generate one **debug** config (16 samples) for a smoke run:
 
 ```bash
 python scripts/make_dataset_config.py \
-  --data-root ../rag_assets/evoco_dataset_pack \
+  --data-root ../rag_assets/rag_data/evoco_dataset_pack \
   --dataset-id popqa_standard \
   --debug-size 16 \
   --name evoco_popqa_standard_debug \
