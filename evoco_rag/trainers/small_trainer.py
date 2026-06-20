@@ -75,7 +75,12 @@ class SmallTrainer:
             and (p.get("positive_doc_ids") or p.get("negative_doc_ids"))
         ]
         if not usable:
-            return {"trained_samples": 0, "skipped": len(pairs), "avg_loss": None}
+            return {
+                "trained_samples": 0,
+                "skipped": len(pairs),
+                "steps": 0,
+                "avg_loss": None,
+            }
 
         model.train()
         if policy_heads is not None:
@@ -190,6 +195,7 @@ class SmallTrainer:
         result = {
             "trained_samples": len(usable),
             "skipped": len(pairs) - len(usable),
+            "steps": steps,
             "avg_loss": (total_loss / steps) if steps else None,
             "avg_rank_loss": (rank_loss_total / steps) if steps else None,
             "policy_heads_enabled": policy_enabled,

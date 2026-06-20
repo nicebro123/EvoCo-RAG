@@ -191,11 +191,13 @@ official_dry_run() {
   log "dry-run official full-data experiment queue"
   if [[ -n "$GPU_PAIRS" ]]; then
     EVOCO_GPU_PAIRS="$GPU_PAIRS" bash scripts/launch_all_experiments.sh \
+      --data-root "$DATA_ROOT" \
       --dry-run \
       --skip-verify \
       --no-generate-configs
   else
     EVOCO_GPUS="$GPUS" bash scripts/launch_all_experiments.sh \
+      --data-root "$DATA_ROOT" \
       --dry-run \
       --skip-verify \
       --no-generate-configs
