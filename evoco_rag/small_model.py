@@ -134,6 +134,7 @@ class SmallRagPolicy:
         if self.policy_heads is not None:
             self.policy_heads.eval()
         with torch.no_grad():
+            use_trained_heads = self.policy_heads is not None and self.policy_heads_loaded
             inputs = self.tokenizer(
                 pairs, padding=True, truncation=True,
                 return_tensors="pt", max_length=self.max_length,
@@ -141,12 +142,12 @@ class SmallRagPolicy:
             out = self.model(
                 **inputs,
                 return_dict=True,
-                output_hidden_states=self.policy_heads is not None,
+                output_hidden_states=use_trained_heads,
             )
             scores = out.logits.view(-1).float().cpu().tolist()
             evidence_confidences = None
             confidence_scores = None
-            if self.policy_heads is not None and out.hidden_states:
+            if use_trained_heads and out.hidden_states:
                 pooled = out.hidden_states[-1][:, 0]
                 head_out = self.policy_heads(pooled)
                 evidence_confidences = torch.sigmoid(
@@ -199,6 +200,33 @@ class SmallRagPolicy:
             policy_action_confidence=policy_action_confidence,
             policy_action_min_conf=policy_action_min_conf,
         )
+        if (
+            contract.retrieval_action == RetrievalAction.RETRIEVE_MORE
+            and len(ranked) > top_k
+        ):
+            expanded_top_k = min(len(ranked), max(top_k + 1, top_k * 2))
+            contract = build_contract(
+                sample,
+                ranked,
+                round_id=round_id,
+                top_k=expanded_top_k,
+                high_conf_threshold=high_conf_threshold,
+                answer_now_margin=answer_now_margin,
+                max_selected_docs=max(max_selected_docs, expanded_top_k),
+                num_retrieval_rounds=2,
+                action_mode=action_mode,
+                policy_action=policy_action,
+                policy_action_confidence=policy_action_confidence,
+                policy_action_min_conf=policy_action_min_conf,
+            )
+            # The field records the action that was executed, while uncertainty
+            # records its concrete effect for metrics and auditing.
+            contract.retrieval_action = RetrievalAction.RETRIEVE_MORE
+            contract.uncertainty.update({
+                "retrieval_expanded": True,
+                "initial_top_k": top_k,
+                "effective_top_k": expanded_top_k,
+            })
         if self.last_policy_prediction:
             contract.uncertainty["policy_predicted_action"] = self.last_policy_prediction["action"]
             contract.uncertainty["policy_action_logits"] = self.last_policy_prediction["action_logits"]

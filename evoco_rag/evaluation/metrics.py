@@ -36,13 +36,17 @@ def compute_metrics(experiences: Iterable) -> dict:
     if not exps:
         return {}
 
-    answer_match, support, citation, unsupported = [], [], [], []
+    answer_match, support, citation, quote_support, unsupported = [], [], [], [], []
     recall_at_k, mrr, answer_in_topk = [], [], []
     selected_counts, audit_calls, cost_penalties, action_cost_penalties = [], [], [], []
+    generator_calls, candidate_counts, nonempty_audits = [], [], []
+    empty_answers, action_fallbacks = [], []
     used_precisions = []
     confidences, outcomes = [], []
     attribution_cases = Counter()
     action_counts = Counter()
+    parse_status_counts = Counter()
+    schema_error_counts = Counter()
     wrong_retriever_rewards = []
     trust_weights, json_valid, self_consistency = [], [], []
 
@@ -60,6 +64,8 @@ def compute_metrics(experiences: Iterable) -> dict:
         answer_match.append(am)
         support.append(sp)
         citation.append(bool(v.get("cited_doc_contains_answer")))
+        trust_components = v.get("trust_components") or {}
+        quote_support.append(float(trust_components.get("evidence_quote_support_score", 0.0)))
         unsupported.append(1.0 if (am and not sp) else 0.0)
         attribution_cases[tt.get("attribution_case") or r.get("attribution_case") or "unknown"] += 1
         wrong_retriever_rewards.append(
@@ -87,7 +93,23 @@ def compute_metrics(experiences: Iterable) -> dict:
         # 成本
         cost = c.get("cost", {})
         selected_counts.append(cost.get("num_selected_docs", 0))
-        audit_calls.append(1.0 if (a.get("final_answer") or used) else 0.0)
+        meta = a.get("audit_metadata") or {}
+        parse_status_counts[meta.get("parse_status") or "unknown"] += 1
+        if meta.get("schema_error"):
+            schema_error_counts[str(meta["schema_error"])] += 1
+        nonempty_audits.append(1.0 if (a.get("final_answer") or used) else 0.0)
+        generator_calls.append(1.0 if meta.get("generator_called", bool(a)) else 0.0)
+        try:
+            candidate_count = max(0, int(meta.get("generation_candidate_count", 0)))
+        except (TypeError, ValueError):
+            candidate_count = 0
+        candidate_counts.append(candidate_count)
+        if "extra_audit_called" in meta:
+            audit_calls.append(1.0 if meta.get("extra_audit_called") else 0.0)
+        else:
+            audit_calls.append(1.0 if c.get("retrieval_action") == "ask_auditor" else 0.0)
+        empty_answers.append(1.0 if not str(a.get("final_answer") or "").strip() else 0.0)
+        action_fallbacks.append(1.0 if meta.get("action_fallback") else 0.0)
         cost_penalties.append(r.get("cost_penalty", 0.0))
         action_cost_penalties.append(r.get("action_cost_penalty", 0.0))
         action = c.get("retrieval_action")
@@ -113,6 +135,7 @@ def compute_metrics(experiences: Iterable) -> dict:
     num_correct = sum(answer_match)
 
     metrics = {
+        "evaluation_protocol_version": 2,
         "num_examples": num,
         # 答案
         "accuracy": 100.0 * _mean(answer_match),
@@ -123,13 +146,19 @@ def compute_metrics(experiences: Iterable) -> dict:
         # 证据
         "evidence_support_rate": _mean(support),
         "citation_correctness": _mean(citation),
+        "evidence_quote_support_rate": _mean(quote_support),
         "used_doc_precision": _mean(used_precisions) if used_precisions else 0.0,
         "unsupported_answer_rate": _mean(unsupported),
         "attribution_case_distribution": dict(attribution_cases),
         "wrong_retriever_reward_rate": _mean(wrong_retriever_rewards),
         # 策略成本
         "avg_selected_docs": _mean(selected_counts),
+        "generator_call_rate": _mean(generator_calls),
         "audit_call_rate": _mean(audit_calls),
+        "audit_nonempty_output_rate": _mean(nonempty_audits),
+        "avg_generation_candidates": _mean(candidate_counts),
+        "empty_answer_rate": _mean(empty_answers),
+        "unfulfilled_action_rate": _mean(action_fallbacks),
         "action_distribution": dict(action_counts),
         "avg_action_cost_penalty": _mean(action_cost_penalties),
         "avg_total_cost_penalty": _mean(cost_penalties),
@@ -142,6 +171,9 @@ def compute_metrics(experiences: Iterable) -> dict:
         },
         # 审计可靠性
         "audit_json_valid_rate": _mean(json_valid),
+        "audit_schema_valid_rate": _mean(json_valid),
+        "audit_parse_status_distribution": dict(parse_status_counts),
+        "audit_schema_error_distribution": dict(schema_error_counts),
         "audit_trust_weight_mean": _mean(trust_weights),
         "low_trust_rate": _mean(1.0 if t < 0.5 else 0.0 for t in trust_weights),
         "audit_self_consistency_mean": _mean(self_consistency) if self_consistency else None,

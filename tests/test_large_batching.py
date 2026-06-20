@@ -73,6 +73,67 @@ def test_large_auditor_batches_generation_and_retries_only_invalid_outputs():
     assert results[1][0].audit_metadata["num_candidates"] == 1
 
 
+def test_large_auditor_uses_per_sample_candidate_counts():
+    auditor = object.__new__(LargeGeneratorAuditor)
+    auditor.candidate_doc_char_limit = 1200
+    auditor.num_audit_candidates = 3
+    auditor.audit_batch_size = 2
+    auditor.audit_temperature = 0.7
+    auditor.json_retry = 3
+
+    sample_a = make_sample()
+    sample_a.sample_id = "sample-a"
+    sample_b = make_sample()
+    sample_b.sample_id = "sample-b"
+    contract_a = make_contract(selected_doc_ids=[0])
+    contract_a.sample_id = sample_a.sample_id
+    contract_b = make_contract(selected_doc_ids=[0])
+    contract_b.sample_id = sample_b.sample_id
+
+    queued_outputs = [
+        [_audit_json(), _audit_json()],
+        [_audit_json()],
+        [_audit_json()],
+    ]
+    calls = []
+
+    def fake_generate_many(messages_batch, temperature):
+        calls.append((len(messages_batch), temperature))
+        return queued_outputs.pop(0)
+
+    auditor._generate_many = fake_generate_many
+    results = auditor.generate_audit_batch(
+        [sample_a, sample_b],
+        [contract_a, contract_b],
+        candidate_counts=[1, 3],
+        batch_size=2,
+    )
+
+    assert calls == [(2, 0.0), (1, 0.7), (1, 0.7)]
+    assert results[0][0].audit_metadata["generation_candidate_count"] == 1
+    assert results[0][0].audit_metadata["extra_audit_called"] is False
+    assert results[1][0].audit_metadata["generation_candidate_count"] == 3
+    assert results[1][0].audit_metadata["extra_audit_called"] is True
+
+
+def test_invalid_candidates_do_not_create_fake_self_consistency():
+    auditor = object.__new__(LargeGeneratorAuditor)
+    auditor.candidate_doc_char_limit = 1200
+    auditor.num_audit_candidates = 1
+    auditor.audit_batch_size = 1
+    auditor.audit_temperature = 0.7
+    auditor.json_retry = 1
+    auditor._generate_many = lambda messages, temperature: ["{}"]
+
+    audit, valid = auditor.generate_audit_batch(
+        [make_sample()], [make_contract([0])], candidate_counts=[1]
+    )[0]
+
+    assert valid is False
+    assert audit.final_answer == ""
+    assert audit.audit_metadata["self_consistency"] == 0.0
+
+
 def _experience(sample_id: str) -> ReplayExperience:
     sample = make_sample()
     sample.sample_id = sample_id
@@ -197,3 +258,26 @@ def test_large_trainer_restores_padding_after_training_error():
         trainer.train_sft([_experience("a")])
 
     assert tokenizer.padding_side == "left"
+
+
+def test_large_trainer_uses_compact_verifier_target():
+    exp = _experience("a")
+    exp.audit["audit_metadata"] = {"raw_text": "x" * 5000}
+    exp.training_targets["large_sft_target"] = {
+        "final_answer": "politician",
+        "used_doc_ids": [0],
+        "used_evidence": [{"doc_id": 0, "quote": "politician"}],
+        "answer_correctness": "correct",
+        "support_level": "fully_supported",
+        "failure_type": "none",
+        "small_model_feedback": [],
+        "suggested_action": "answer_now",
+    }
+    trainer = LargeTrainer(SimpleNamespace())
+
+    example = trainer._build_sft_example(exp)
+    payload = json.loads(example["target"])
+
+    assert payload["final_answer"] == "politician"
+    assert "audit_metadata" not in payload
+    assert "raw_text" not in example["target"]

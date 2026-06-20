@@ -18,6 +18,18 @@ def _doc_text(sample: RagSample, doc_id: int) -> str:
     return doc.get("text") or doc.get("raw") or ""
 
 
+def _quote_supports_answer(sample: RagSample, evidence: dict) -> bool:
+    try:
+        doc_id = int(evidence.get("doc_id"))
+    except (TypeError, ValueError):
+        return False
+    quote = str(evidence.get("quote") or "").strip()
+    if not quote:
+        return False
+    document = _doc_text(sample, doc_id)
+    return quote.lower() in document.lower() and exact_presence(sample.answers, quote)
+
+
 def verify(
     sample: RagSample,
     contract: EvidenceContract,
@@ -45,6 +57,14 @@ def verify(
         if exact_presence(sample.answers, _doc_text(sample, doc_id)):
             cited_doc_contains_answer = True
             break
+
+    evidence_quote_support = any(
+        _quote_supports_answer(sample, item)
+        for item in (audit.used_evidence or [])
+        if isinstance(item, dict)
+    )
+    if not evidence_quote_support:
+        notes.append("audit 未提供可验证且包含答案的原文 quote")
 
     contract_doc_ids = set(contract.selected_doc_ids()) | set(contract.candidate_doc_ids())
     if audit.used_doc_ids:
@@ -74,7 +94,7 @@ def verify(
     self_consistency_score = max(0.0, min(1.0, self_consistency_score))
 
     # 信任权重
-    if json_valid and answer_match and cited_doc_contains_answer:
+    if json_valid and answer_match and cited_doc_contains_answer and evidence_quote_support:
         audit_trust_weight = high_trust
     elif json_valid and (answer_match or used_doc_in_selected_evidence):
         audit_trust_weight = (high_trust + low_trust) / 2
@@ -91,6 +111,7 @@ def verify(
         "json_valid_score": 1.0 if json_valid else 0.0,
         "answer_match_score": 1.0 if answer_match else 0.0,
         "citation_score": 1.0 if cited_doc_contains_answer else 0.0,
+        "evidence_quote_support_score": 1.0 if evidence_quote_support else 0.0,
         "selected_doc_score": 1.0 if used_doc_in_selected_evidence else 0.0,
         "support_rule_score": 1.0 if support_rule_passed else 0.0,
         "self_consistency_score": round(self_consistency_score, 4),

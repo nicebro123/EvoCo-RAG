@@ -28,10 +28,13 @@ _ROUND_RE = re.compile(r"^round_(\d+)\.json$")
 # 从 eval（真实泛化）里抽取的标量指标
 EVAL_METRICS = [
     "accuracy", "recall_at_k", "mrr", "evidence_support_rate",
-    "citation_correctness", "used_doc_precision", "unsupported_answer_rate",
+    "citation_correctness", "evidence_quote_support_rate", "used_doc_precision",
+    "unsupported_answer_rate",
     "wrong_retriever_reward_rate", "avg_selected_docs", "avg_total_cost_penalty",
-    "cost_per_correct_answer", "audit_json_valid_rate", "audit_trust_weight_mean",
-    "confidence_success_correlation", "ece",
+    "cost_per_correct_answer", "generator_call_rate", "audit_call_rate",
+    "audit_nonempty_output_rate", "avg_generation_candidates", "empty_answer_rate",
+    "unfulfilled_action_rate", "audit_schema_valid_rate", "audit_trust_weight_mean",
+    "confidence_success_correlation", "ece", "evaluation_protocol_version",
 ]
 
 

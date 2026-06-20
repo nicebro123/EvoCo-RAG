@@ -70,6 +70,20 @@ def test_sample_small_training_pairs_respects_trust(tmp_path):
     assert pairs[0]["sample_id"] == "s1"
 
 
+def test_rule_verified_small_target_bypasses_audit_trust_filter(tmp_path):
+    rb = ReplayBuffer(root=str(tmp_path / "replay"))
+    exp = _exp("failure", "retrieval_miss", 0.2, neg=[0])
+    exp.training_targets["small_target_source"] = "gold_rule_verifier"
+    exp.training_targets["small_action_target"] = "retrieve_more"
+    rb.write([exp], round_id=0)
+
+    pairs = rb.sample_small_training_pairs(rb.read(0), min_trust=0.5)
+
+    assert len(pairs) == 1
+    assert pairs[0]["negative_doc_ids"] == [0]
+    assert pairs[0]["action_target"] == "retrieve_more"
+
+
 def test_large_sft_selection(tmp_path):
     rb = ReplayBuffer(root=str(tmp_path / "replay"))
     exps = [_exp("s1", "none", 0.9), _exp("s2", "generation_error", 0.9)]

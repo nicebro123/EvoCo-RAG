@@ -51,8 +51,24 @@ Inspect the generated files under:
     ├── run_config.yaml
     ├── train.log
     ├── eval.log
-    └── metrics/test_eval.json
+    └── metrics/
+        ├── round_*.json
+        ├── test_predictions_round_*.jsonl
+        ├── test_eval_round_*.json
+        ├── test_predictions.jsonl
+        └── test_eval.json
 ```
+
+Official full studies use evaluation protocol v2 and `_v2` study directories.
+Protocol v2 removes gold answers from all generation prompts, validates required
+audit fields, records actual candidate counts, and saves per-example test
+predictions. Old protocol-v1 outputs are intentionally not reused.
+
+After every round, training must produce both
+`metrics/test_eval_round_NNN.json` and
+`metrics/test_predictions_round_NNN.jsonl`. Full-data configs evaluate the
+complete test split each round. Missing test data or unavailable models abort
+the run instead of falling back to training-replay metrics.
 
 `metrics/test_eval.json` is the completion marker when post-training evaluation
 is enabled. If a run already has that file, the generated GPU queue skips it
@@ -60,6 +76,16 @@ unless you pass `--overwrite`.
 If the final training marker already exists but `metrics/test_eval.json` is
 missing, the launcher runs evaluation only instead of retraining into existing
 checkpoints.
+
+Aggregate completed protocol-v2 runs after the queue finishes:
+
+```bash
+python scripts/summarize_experiments.py \
+  --root ../rag_assets/outputs/experiments
+```
+
+The summary keeps incomplete and protocol-mismatched runs for diagnosis, while
+`summary_v2/experiment_ranking.csv` contains only complete protocol-v2 runs.
 
 Launch sequentially in the current process:
 

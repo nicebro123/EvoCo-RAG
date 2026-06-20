@@ -14,6 +14,7 @@ from typing import Optional
 
 from .schemas import (
     AnswerCorrectness,
+    FeedbackLabel,
     FailureType,
     LargeAudit,
     RetrievalAction,
@@ -52,8 +53,8 @@ def build_audit_prompt(
 ) -> list[dict]:
     """构造 (system, user) chat messages。
 
-    show_gold=True 仅用于训练阶段的 teacher audit；评估阶段必须为 False，
-    不能把 gold answers 放进生成 prompt（开发文档 §5.6、§9.4）。
+    运行时训练和评估都必须保持 show_gold=False。参数仅保留给离线 prompt
+    诊断，不能用于生成 replay 或测试预测。
     """
     system = (
         "You are an evidence auditor for a retrieval-augmented QA system. "
@@ -133,7 +134,7 @@ def _coerce_enum(value, allowed: set, default):
 
 
 def _sanitize(d: dict) -> dict:
-    """把非法枚举降级为默认值，保证 LargeAudit.from_dict 不抛错。"""
+    """Normalize already validated payload fields for LargeAudit."""
     out = dict(d)
     out["answer_correctness"] = _coerce_enum(
         d.get("answer_correctness"), AnswerCorrectness.ALL, AnswerCorrectness.UNKNOWN)
@@ -151,6 +152,16 @@ def _sanitize(d: dict) -> dict:
         except (ValueError, TypeError):
             continue
     out["used_doc_ids"] = ids
+    evidence = []
+    for item in d.get("used_evidence", []) or []:
+        if not isinstance(item, dict):
+            continue
+        try:
+            doc_id = int(item.get("doc_id"))
+        except (TypeError, ValueError):
+            continue
+        evidence.append({"doc_id": doc_id, "quote": str(item.get("quote") or "")})
+    out["used_evidence"] = evidence
     fb = []
     for item in d.get("small_model_feedback", []) or []:
         if isinstance(item, dict) and "label" in item:
@@ -162,20 +173,83 @@ def _sanitize(d: dict) -> dict:
     return out
 
 
-def fallback_audit(sample_id: str, round_id: int, raw_text: str = "") -> LargeAudit:
-    """解析失败时的兜底审计：尽量从原文截一个答案，标记为不可信。"""
+def _audit_schema_error(d: object) -> str | None:
+    """Return a compact reason when a parsed JSON value violates the audit schema."""
+    if not isinstance(d, dict):
+        return "top_level_not_object"
+    required = {
+        "final_answer",
+        "used_doc_ids",
+        "used_evidence",
+        "answer_correctness",
+        "support_level",
+        "failure_type",
+        "small_model_feedback",
+        "suggested_action",
+    }
+    missing = sorted(required - set(d))
+    if missing:
+        return "missing_fields:" + ",".join(missing)
+    if not isinstance(d.get("final_answer"), str) or not d["final_answer"].strip():
+        return "empty_final_answer"
+    if not isinstance(d.get("used_doc_ids"), list):
+        return "used_doc_ids_not_list"
+    if not isinstance(d.get("used_evidence"), list):
+        return "used_evidence_not_list"
+    if not isinstance(d.get("small_model_feedback"), list):
+        return "small_model_feedback_not_list"
+    if d.get("answer_correctness") not in AnswerCorrectness.ALL:
+        return "invalid_answer_correctness"
+    if d.get("support_level") not in SupportLevel.ALL:
+        return "invalid_support_level"
+    if d.get("failure_type") not in FailureType.ALL:
+        return "invalid_failure_type"
+    if d.get("suggested_action") not in RetrievalAction.ALL:
+        return "invalid_suggested_action"
+    for value in d["used_doc_ids"]:
+        try:
+            int(value)
+        except (TypeError, ValueError):
+            return "invalid_used_doc_id"
+    for item in d["used_evidence"]:
+        if not isinstance(item, dict) or "doc_id" not in item or "quote" not in item:
+            return "invalid_used_evidence"
+        try:
+            int(item["doc_id"])
+        except (TypeError, ValueError):
+            return "invalid_used_evidence_doc_id"
+        if not isinstance(item["quote"], str):
+            return "invalid_used_evidence_quote"
+    for item in d["small_model_feedback"]:
+        if not isinstance(item, dict):
+            return "invalid_small_model_feedback"
+        if item.get("label") not in FeedbackLabel.ALL:
+            return "invalid_small_model_feedback_label"
+    return None
+
+
+def fallback_audit(
+    sample_id: str,
+    round_id: int,
+    raw_text: str = "",
+    reason: str = "parse_failed",
+    raw_json: object | None = None,
+) -> LargeAudit:
+    """Return an explicitly empty, untrusted audit after parsing/schema failure."""
     return LargeAudit(
         sample_id=sample_id,
         round=round_id,
-        final_answer=(raw_text or "").strip()[:200],
+        final_answer="",
         used_doc_ids=[],
         answer_correctness=AnswerCorrectness.UNKNOWN,
         support_level=SupportLevel.UNSUPPORTED,
-        failure_type=FailureType.NONE,
-        suggested_action=RetrievalAction.ANSWER_NOW,
+        failure_type=FailureType.GENERATION_ERROR,
+        suggested_action=RetrievalAction.ASK_AUDITOR,
         audit_metadata={
             "parse_status": "fallback",
+            "schema_error": reason,
             "raw_text": (raw_text or "")[:2000],
+            **({"raw_json": raw_json} if raw_json is not None else {}),
         },
     )
 
@@ -184,7 +258,16 @@ def parse_audit(text: str, sample_id: str, round_id: int) -> tuple[LargeAudit, b
     """解析大模型输出。返回 (LargeAudit, json_valid)。"""
     block = extract_json_block(text)
     if block is None:
-        return fallback_audit(sample_id, round_id, text), False
+        return fallback_audit(sample_id, round_id, text, reason="json_not_found"), False
+    schema_error = _audit_schema_error(block)
+    if schema_error:
+        return fallback_audit(
+            sample_id,
+            round_id,
+            text,
+            reason=schema_error,
+            raw_json=block,
+        ), False
     block.setdefault("sample_id", sample_id)
     block.setdefault("round", round_id)
     try:
@@ -195,5 +278,11 @@ def parse_audit(text: str, sample_id: str, round_id: int) -> tuple[LargeAudit, b
             "raw_json": block,
         }
         return audit, True
-    except ValueError:
-        return fallback_audit(sample_id, round_id, text), False
+    except (TypeError, ValueError):
+        return fallback_audit(
+            sample_id,
+            round_id,
+            text,
+            reason="large_audit_validation_failed",
+            raw_json=block,
+        ), False

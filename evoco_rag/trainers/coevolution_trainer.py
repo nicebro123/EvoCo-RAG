@@ -64,6 +64,18 @@ class CoevolutionTrainer:
     def _audit_batch_size(self) -> int:
         return max(1, int(getattr(self.cfg.runtime, "audit_batch_size", 1)))
 
+    def _candidate_counts(self, contracts) -> list[int]:
+        from ..schemas import RetrievalAction
+
+        audit_candidates = max(
+            1, int(getattr(self.cfg.runtime, "num_audit_candidates", 1)))
+        return [
+            audit_candidates
+            if contract.retrieval_action == RetrievalAction.ASK_AUDITOR
+            else 1
+            for contract in contracts
+        ]
+
     def _log_experience_progress(
         self,
         round_id: int,
@@ -151,7 +163,15 @@ class CoevolutionTrainer:
         from ..schemas import LargeAudit
         top = contract.selected_doc_ids()[:1]
         return LargeAudit(sample_id=sample.sample_id, round=round_id,
-                          final_answer="", used_doc_ids=top), True
+                          final_answer="", used_doc_ids=top,
+                          audit_metadata={
+                              "generator_called": False,
+                              "generation_candidate_count": 0,
+                              "extra_audit_called": False,
+                              "action_executed": False,
+                              "action_fallback": False,
+                              "parse_status": "no_audit_ablation",
+                          }), True
 
     def _finalize_experience(
         self,
@@ -184,7 +204,12 @@ class CoevolutionTrainer:
         contract = self._build_contract_for_sample(sample, round_id)
         if self.cfg.ablation.use_evidence_audit and self.large is not None:
             audit, json_valid = self.large.generate_audit(
-                sample, contract, show_gold=True, round_id=round_id)
+                sample,
+                contract,
+                show_gold=False,
+                round_id=round_id,
+                candidate_count=self._candidate_counts([contract])[0],
+            )
         else:
             audit, json_valid = self._placeholder_audit(sample, contract, round_id)
         return self._finalize_experience(sample, round_id, contract, audit, json_valid)
@@ -196,15 +221,16 @@ class CoevolutionTrainer:
                 audits = self.large.generate_audit_batch(
                     samples,
                     contracts,
-                    show_gold=True,
+                    show_gold=False,
                     round_id=round_id,
                     batch_size=self._audit_batch_size(),
+                    candidate_counts=self._candidate_counts(contracts),
                 )
                 if len(audits) != len(samples):
                     raise RuntimeError("large auditor returned fewer batch audits than samples")
             else:
                 audits = [
-                    self.large.generate_audit(sample, contract, show_gold=True, round_id=round_id)
+                    self.large.generate_audit(sample, contract, show_gold=False, round_id=round_id)
                     for sample, contract in zip(samples, contracts)
                 ]
         else:
@@ -303,7 +329,6 @@ class CoevolutionTrainer:
         small_started = time.time()
         if self.cfg.ablation.train_small_lora and self.small_trainer is not None:
             exps = self.replay.read(round_id)
-            exps = self.replay.downsample_noisy(exps)
             pairs = self.replay.sample_small_training_pairs(exps)
             stats["small"] = self.small_trainer.train(pairs)
             small_dir = checkpoint_round_dir(self.cfg.models.small_lora_dir, round_id)
@@ -335,18 +360,23 @@ class CoevolutionTrainer:
             flush=True,
         )
 
-        # 评估：优先"真实泛化"（测试集 + show_gold=False）；训练集教师审计诊断单独留档
+        # 评估：每一轮都必须完成独立测试集推理；训练 replay 指标仅作诊断。
         eval_started = time.time()
-        if self.evaluator is not None:
+        if self.evaluator is None:
+            # Internal logic-only callers may omit evaluation. The official
+            # train_evoco entrypoint always supplies one and verifies every round.
+            stats["eval_source"] = "disabled"
+            stats["per_round_test_completed"] = False
+        else:
             train_metrics = self.evaluator.evaluate(round_id)
             gen_metrics = self.evaluator.evaluate_generalization(round_id)
-            if gen_metrics is not None:
-                stats["eval"] = gen_metrics              # 论文口径：真实泛化
-                stats["eval_source"] = "test_generalization"
-                stats["train_metrics"] = train_metrics   # 训练集（含 gold）诊断，仅参考
-            else:
-                stats["eval"] = train_metrics
-                stats["eval_source"] = "train_replay"
+            if gen_metrics is None:
+                raise RuntimeError(
+                    "per-round test evaluation requires non-empty test samples and both models")
+            stats["eval"] = gen_metrics
+            stats["eval_source"] = "test_generalization"
+            stats["per_round_test_completed"] = True
+            stats["train_metrics"] = train_metrics
         stats["timing"]["evaluation_seconds"] = round(time.time() - eval_started, 4)
         stats["timing"]["total_round_seconds"] = round(time.time() - round_started, 4)
         print(

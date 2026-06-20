@@ -9,7 +9,7 @@
 # Dry run:
 #   python scripts/launch_experiments.py --spec configs/experiments/popqa_sweep_full_2gpu.yaml
 
-study_name: evoco_popqa_sweep_full_2gpu
+study_name: evoco_popqa_sweep_full_2gpu_v2
 output_root: ../rag_assets/outputs/experiments
 checkpoint_root: ../rag_assets/checkpoints/experiments
 base_config: configs/local/popqa_standard_full.yaml
@@ -36,7 +36,6 @@ experiments:
       runtime.max_completion_length: 1024
       training.batch_size: 4
       training.large_batch_size: 2
-      training.num_generations: 2
 
   - name: precision_top8
     overrides:
@@ -49,7 +48,6 @@ experiments:
       runtime.max_completion_length: 1024
       training.batch_size: 4
       training.large_batch_size: 2
-      training.num_generations: 2
 
   - name: answer_only_reward
     overrides:

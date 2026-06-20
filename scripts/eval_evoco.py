@@ -50,11 +50,15 @@ def main():
                                           audit_batch_size=cfg.runtime.audit_batch_size,
                                           audit_temperature=cfg.runtime.audit_temperature)
     evaluator = Evaluator(cfg, small_policy, large_auditor)
-    metrics = evaluator.run_inference(samples)
+    out_dir = os.path.join(cfg.output_dir, "metrics")
+    os.makedirs(out_dir, exist_ok=True)
+    metrics = evaluator.run_inference(
+        samples,
+        predictions_path=os.path.join(out_dir, "test_predictions.jsonl"),
+    )
     print(json.dumps(metrics, ensure_ascii=False, indent=2))
 
-    out = os.path.join(cfg.output_dir, "metrics", "test_eval.json")
-    os.makedirs(os.path.dirname(out), exist_ok=True)
+    out = os.path.join(out_dir, "test_eval.json")
     with open(out, "w", encoding="utf-8") as f:
         json.dump(metrics, f, ensure_ascii=False, indent=2)
 

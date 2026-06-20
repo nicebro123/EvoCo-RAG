@@ -17,6 +17,17 @@ from ..auditor import build_audit_prompt
 
 
 class LargeTrainer:
+    TARGET_FIELDS = (
+        "final_answer",
+        "used_doc_ids",
+        "used_evidence",
+        "answer_correctness",
+        "support_level",
+        "failure_type",
+        "small_model_feedback",
+        "suggested_action",
+    )
+
     def __init__(self, auditor, lr: float = 1e-5, max_prompt_length: int = 3072,
                  max_completion_length: int = 1024, batch_size: int = 2):
         self.auditor = auditor
@@ -36,9 +47,16 @@ class LargeTrainer:
         contract = EvidenceContract.from_dict(exp.contract) if exp.contract else None
         if contract is None:
             return None
-        # 评估阶段不可见 gold；SFT 目标就是已审计通过的 audit JSON
+        # Prompt never contains gold. The target is a compact, verifier-built
+        # correction and deliberately excludes audit metadata/raw generations.
         messages = build_audit_prompt(sample, contract, show_gold=False)
-        target = json.dumps(exp.audit, ensure_ascii=False)
+        payload = exp.training_targets.get("large_sft_target")
+        if not isinstance(payload, dict):
+            payload = {key: exp.audit.get(key) for key in self.TARGET_FIELDS}
+        if not str(payload.get("final_answer") or "").strip():
+            return None
+        target_payload = {key: payload.get(key) for key in self.TARGET_FIELDS}
+        target = json.dumps(target_payload, ensure_ascii=False, separators=(",", ":"))
         return {"messages": messages, "target": target}
 
     def train_sft(self, experiences: list, epochs: int = 1, batch_size: int | None = None) -> dict:

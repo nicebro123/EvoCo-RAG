@@ -27,6 +27,25 @@ from evoco_rag.weights import (
 )
 
 
+def publish_final_round_metrics(output_dir: str, stats: list[dict]) -> int:
+    """Expose the already-computed final-round test result under canonical names."""
+    if not stats:
+        raise RuntimeError("training completed without any round statistics")
+    import shutil
+
+    final_round = int(stats[-1]["round"])
+    metrics_dir = os.path.join(output_dir, "metrics")
+    shutil.copyfile(
+        os.path.join(metrics_dir, f"test_eval_round_{final_round:03d}.json"),
+        os.path.join(metrics_dir, "test_eval.json"),
+    )
+    shutil.copyfile(
+        os.path.join(metrics_dir, f"test_predictions_round_{final_round:03d}.jsonl"),
+        os.path.join(metrics_dir, "test_predictions.jsonl"),
+    )
+    return final_round
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--config", default="configs/evoco_popqa.yaml")
@@ -47,6 +66,9 @@ def main():
     eval_cap = cfg.data.eval_size if cfg.data.eval_size is not None else cfg.data.debug_size
     test_samples = load_test_samples(cfg.data.test_path, cfg.data.dataset_name, eval_cap)
     print(f"loaded {len(test_samples)} test samples for per-round generalization eval")
+    if not test_samples:
+        raise SystemExit(
+            "per-round test evaluation is required, but the configured test split is empty.")
     small_init = resolve_adapter_for_loading(cfg.models.small_lora_dir) if args.resume else None
     large_init = resolve_adapter_for_loading(cfg.models.large_lora_dir) if args.resume else None
     latest_small_round = latest_checkpoint_round(cfg.models.small_lora_dir)
@@ -107,6 +129,16 @@ def main():
     trainer = CoevolutionTrainer(cfg, small_policy, large_auditor,
                                  small_trainer, large_trainer, evaluator)
     stats = trainer.run(samples, start_round=start_round)
+    incomplete_rounds = [
+        stat.get("round") for stat in stats
+        if stat.get("eval_source") != "test_generalization"
+        or not stat.get("per_round_test_completed")
+    ]
+    if incomplete_rounds:
+        raise RuntimeError(
+            f"per-round test evaluation did not complete for rounds: {incomplete_rounds}")
+    final_round = publish_final_round_metrics(cfg.output_dir, stats)
+    print(f"published round {final_round} test evaluation as final metrics")
     print("co-evolution finished:")
     for s in stats:
         print(s)

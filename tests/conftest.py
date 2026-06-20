@@ -62,11 +62,17 @@ def make_contract(selected_doc_ids, candidate_doc_ids=(0, 1),
 
 def make_audit(final_answer, used_doc_ids, **kw):
     sample = make_sample()
+    used_evidence = [
+        {"doc_id": doc_id, "quote": sample.doc_by_id(doc_id)["text"]}
+        for doc_id in used_doc_ids
+        if sample.doc_by_id(doc_id)
+    ]
     return LargeAudit(
         sample_id=sample.sample_id,
         round=1,
         final_answer=final_answer,
         used_doc_ids=list(used_doc_ids),
+        used_evidence=used_evidence,
         answer_correctness=kw.get("answer_correctness", "correct"),
         support_level=kw.get("support_level", "fully_supported"),
         failure_type=kw.get("failure_type", "none"),

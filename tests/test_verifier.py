@@ -53,6 +53,7 @@ def test_trust_components_are_explainable():
     v = verify(sample, contract, audit)
     assert v.trust_components["json_valid_score"] == 1.0
     assert v.trust_components["citation_score"] == 1.0
+    assert v.trust_components["evidence_quote_support_score"] == 1.0
     assert v.trust_components["support_rule_score"] == 1.0
 
 
@@ -64,3 +65,14 @@ def test_low_self_consistency_lowers_trust():
     v = verify(sample, contract, audit)
     assert v.audit_trust_weight < 0.9
     assert v.trust_components["self_consistency_score"] == 0.2
+
+
+def test_irrelevant_quote_prevents_high_trust():
+    sample = make_sample()
+    contract = make_contract(selected_doc_ids=[0])
+    audit = make_audit(final_answer="politician", used_doc_ids=[0])
+    audit.used_evidence = [{"doc_id": 0, "quote": "Henry Master Feilden"}]
+    v = verify(sample, contract, audit)
+    assert v.cited_doc_contains_answer is True
+    assert v.trust_components["evidence_quote_support_score"] == 0.0
+    assert v.audit_trust_weight < 0.9

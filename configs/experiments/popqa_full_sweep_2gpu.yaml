@@ -6,7 +6,7 @@
 # Dry run:
 #   python scripts/launch_experiments.py --spec configs/experiments/popqa_full_sweep_2gpu.yaml
 
-study_name: evoco_popqa_full_sweep_2gpu
+study_name: evoco_popqa_full_sweep_2gpu_v2
 output_root: ../rag_assets/outputs/experiments
 checkpoint_root: ../rag_assets/checkpoints/experiments
 base_config: configs/local/popqa_standard_full.yaml
@@ -29,7 +29,6 @@ experiments:
       runtime.replay_flush_interval: 10
       training.batch_size: 4
       training.large_batch_size: 2
-      training.num_generations: 2
 
   - name: cost_top3
 
@@ -46,7 +45,6 @@ experiments:
       runtime.replay_flush_interval: 10
       training.batch_size: 4
       training.large_batch_size: 2
-      training.num_generations: 2
 
   - name: audit_self_consistency
     overrides:
@@ -61,4 +59,3 @@ experiments:
       runtime.replay_flush_interval: 10
       training.batch_size: 4
       training.large_batch_size: 2
-      training.num_generations: 2

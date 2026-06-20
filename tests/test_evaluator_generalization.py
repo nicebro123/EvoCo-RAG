@@ -1,10 +1,17 @@
 """验证真实泛化评估开关与回退逻辑。"""
 
+import json
+import os
+from pathlib import Path
+
+import pytest
+
 from conftest import make_sample
 
 from evoco_rag.config import EvoCoConfig
 from evoco_rag.evaluation.evaluator import Evaluator
 from evoco_rag.trainers.coevolution_trainer import CoevolutionTrainer
+from scripts.train_evoco import publish_final_round_metrics
 
 
 def test_can_generalize_false_without_models(tmp_path):
@@ -70,12 +77,18 @@ def test_generalization_path_runs_with_stub_models(tmp_path):
     assert metrics["num_examples"] == 2
     assert "accuracy" in metrics
     # 落盘的真实泛化指标文件存在
-    import os
     assert os.path.exists(os.path.join(cfg.output_dir, "metrics", "test_eval_round_000.json"))
+    predictions = os.path.join(
+        cfg.output_dir, "metrics", "test_predictions_round_000.jsonl")
+    assert os.path.exists(predictions)
+    assert sum(1 for _ in open(predictions, encoding="utf-8")) == 2
+    with open(predictions, encoding="utf-8") as f:
+        first = json.loads(next(f))
+    assert first["training_targets"]["evaluation_only"] is True
+    assert first["training_targets"]["large_sft_target"] is None
 
 
-def test_round_eval_falls_back_to_train_replay(tmp_path):
-    """有 evaluator 但无法泛化时，stats['eval'] 回退到训练集诊断并标注来源。"""
+def test_round_eval_requires_generalization_inputs(tmp_path):
     cfg = EvoCoConfig()
     cfg.output_dir = str(tmp_path / "out")
     cfg.ablation.use_evidence_audit = False
@@ -84,8 +97,54 @@ def test_round_eval_falls_back_to_train_replay(tmp_path):
 
     evaluator = Evaluator(cfg, small_policy=None, large_auditor=None, test_samples=None)
     trainer = CoevolutionTrainer(cfg, None, None, evaluator=evaluator)
-    stats = trainer.run_round([make_sample()], round_id=0)
+    with pytest.raises(RuntimeError, match="per-round test evaluation requires"):
+        trainer.run_round([make_sample()], round_id=0)
 
-    assert stats["eval_source"] == "train_replay"
-    assert "eval" in stats
-    assert stats["eval"]["num_examples"] == 1
+
+def test_every_round_writes_test_metrics_and_predictions(tmp_path):
+    cfg = EvoCoConfig()
+    cfg.output_dir = str(tmp_path / "out")
+    cfg.training.num_rounds = 3
+    cfg.ablation.train_small_lora = False
+    cfg.ablation.train_large_lora = False
+
+    samples = [make_sample()]
+    evaluator = Evaluator(
+        cfg,
+        small_policy=_StubSmall(),
+        large_auditor=_StubLarge(),
+        test_samples=samples,
+    )
+    trainer = CoevolutionTrainer(
+        cfg,
+        _StubSmall(),
+        _StubLarge(),
+        evaluator=evaluator,
+    )
+
+    stats = trainer.run(samples)
+
+    assert len(stats) == 3
+    assert all(item["eval_source"] == "test_generalization" for item in stats)
+    assert all(item["per_round_test_completed"] is True for item in stats)
+    for round_id in range(3):
+        metrics_path = os.path.join(
+            cfg.output_dir, "metrics", f"test_eval_round_{round_id:03d}.json")
+        predictions_path = os.path.join(
+            cfg.output_dir, "metrics", f"test_predictions_round_{round_id:03d}.jsonl")
+        assert os.path.exists(metrics_path)
+        assert os.path.exists(predictions_path)
+        with open(metrics_path, encoding="utf-8") as f:
+            metrics = json.load(f)
+        assert metrics["round"] == round_id
+        assert metrics["eval_split"] == "test"
+        assert metrics["evaluation_stage"] == "per_round"
+        assert metrics["num_examples"] == 1
+        assert sum(1 for _ in open(predictions_path, encoding="utf-8")) == 1
+
+    assert publish_final_round_metrics(cfg.output_dir, stats) == 2
+    metrics_dir = Path(cfg.output_dir) / "metrics"
+    assert (metrics_dir / "test_eval.json").read_text(encoding="utf-8") == (
+        metrics_dir / "test_eval_round_002.json").read_text(encoding="utf-8")
+    assert (metrics_dir / "test_predictions.jsonl").read_text(encoding="utf-8") == (
+        metrics_dir / "test_predictions_round_002.jsonl").read_text(encoding="utf-8")

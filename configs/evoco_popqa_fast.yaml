@@ -44,11 +44,8 @@ training:
   num_rounds: 1
   batch_size: 8
   large_batch_size: 2
-  num_generations: 1
   small_lr: 5.0e-5
   large_lr: 1.0e-5
-  train_small_lora: true
-  train_large_lora: true
 
 reward:
   answer_weight: 1.0

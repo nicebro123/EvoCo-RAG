@@ -41,10 +41,12 @@ def test_answer_true_support_false():
     v, r, t = _pipeline(selected_ids=[1], final_answer="politician")
     assert v.answer_match is True
     assert v.support_rule_passed is False
-    # 关键断言：不能给小模型 positive doc
-    assert t["small_positive_doc_ids"] == []
+    # 不能奖励错误选中的 doc1，但应使用候选池中漏排的真实 doc0 纠正 reranker。
+    assert 1 not in t["small_positive_doc_ids"]
+    assert 0 in t["small_positive_doc_ids"]
     assert t["failure_type"] == FailureType.UNSUPPORTED_ANSWER
     assert t["large_sft_eligible"] is False
+    assert t["large_sft_target"] is None
     assert r.support_reward == 0.0
     assert r.attribution_case == AttributionCase.PARAMETRIC_ANSWER_WITHOUT_SUPPORT
     assert t["wrong_retriever_reward_if_answer_only"] is True
@@ -62,7 +64,10 @@ def test_answer_false_support_true():
     assert t["failure_type"] == FailureType.GENERATION_ERROR
     # 大模型 reward 较低（answer_reward=0）
     assert r.answer_reward == 0.0
-    assert t["large_sft_eligible"] is False
+    assert t["large_sft_eligible"] is True
+    assert t["large_sft_target"]["final_answer"] == "politician"
+    assert t["large_sft_target"]["used_doc_ids"] == [0]
+    assert t["small_action_target"] == RetrievalAction.ASK_AUDITOR
     assert t["attribution_case"] == AttributionCase.RETRIEVER_SUCCESS_GENERATOR_FAIL
     assert t["small_credit_weight"] == 1.0
 
@@ -71,7 +76,7 @@ def test_answer_false_support_false():
     v, r, t = _pipeline(selected_ids=[1], final_answer="banker")
     assert v.answer_match is False
     assert v.support_rule_passed is False
-    assert t["small_positive_doc_ids"] == []
+    assert 0 in t["small_positive_doc_ids"]
     assert 1 in t["small_negative_doc_ids"]
     assert t["small_action_target"] == "retrieve_more"
     assert t["attribution_case"] == AttributionCase.BOTH_FAIL
@@ -91,3 +96,13 @@ def test_action_cost_penalty_for_retrieve_more():
     reward = compute_decomposed_reward(sample, contract, audit, verification)
     assert reward.action_cost_penalty > 0.0
     assert reward.cost_penalty > 0.0
+
+
+def test_audit_cost_uses_actual_extra_candidate_count():
+    sample = make_sample()
+    contract = make_contract(selected_doc_ids=[0], action=RetrievalAction.ANSWER_NOW)
+    audit = make_audit(final_answer="politician", used_doc_ids=[0])
+    audit.audit_metadata = {"generation_candidate_count": 3}
+    verification = verify(sample, contract, audit, json_valid=True)
+    reward = compute_decomposed_reward(sample, contract, audit, verification)
+    assert reward.action_cost_penalty == 0.2

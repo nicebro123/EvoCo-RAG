@@ -24,8 +24,10 @@ def test_extract_json_with_nested_braces_and_strings():
 
 def test_parse_audit_valid():
     text = '{"final_answer": "politician", "used_doc_ids": [0], ' \
+           '"used_evidence": [{"doc_id": 0, "quote": "politician"}], ' \
            '"answer_correctness": "correct", "support_level": "fully_supported", ' \
-           '"failure_type": "none", "suggested_action": "answer_now"}'
+           '"failure_type": "none", "small_model_feedback": [], ' \
+           '"suggested_action": "answer_now"}'
     audit, ok = parse_audit(text, "s1", 1)
     assert ok is True
     assert audit.final_answer == "politician"
@@ -34,21 +36,29 @@ def test_parse_audit_valid():
     assert audit.audit_metadata["raw_json"]["final_answer"] == "politician"
 
 
-def test_parse_audit_downgrades_illegal_enum():
+def test_parse_audit_rejects_illegal_enum_and_missing_fields():
     text = '{"final_answer": "x", "failure_type": "cosmic_ray", ' \
            '"answer_correctness": "weird", "support_level": "nope", ' \
            '"suggested_action": "teleport", "used_doc_ids": ["1", 2, "bad"]}'
     audit, ok = parse_audit(text, "s1", 1)
-    assert ok is True  # 降级后仍可构造
-    assert audit.failure_type == "none"
-    assert audit.answer_correctness == "unknown"
-    assert audit.used_doc_ids == [1, 2]
+    assert ok is False
+    assert audit.final_answer == ""
+    assert audit.audit_metadata["parse_status"] == "fallback"
+    assert audit.audit_metadata["schema_error"].startswith("missing_fields:")
+
+
+def test_parse_audit_rejects_parseable_empty_object():
+    audit, ok = parse_audit("{}", "s1", 1)
+    assert ok is False
+    assert audit.final_answer == ""
+    assert "missing_fields" in audit.audit_metadata["schema_error"]
 
 
 def test_parse_audit_fallback_on_garbage():
     audit, ok = parse_audit("no json here at all", "s1", 1)
     assert ok is False
     assert audit.sample_id == "s1"
+    assert audit.final_answer == ""
     assert audit.audit_metadata["parse_status"] == "fallback"
     assert "no json" in audit.audit_metadata["raw_text"]
 

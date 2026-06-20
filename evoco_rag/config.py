@@ -28,11 +28,8 @@ class TrainingConfig:
     num_rounds: int = 3
     batch_size: int = 4
     large_batch_size: int = 2
-    num_generations: int = 2
     small_lr: float = 5.0e-5
     large_lr: float = 1.0e-5
-    train_small_lora: bool = True
-    train_large_lora: bool = True
 
 
 @dataclass
@@ -98,30 +95,53 @@ class EvoCoConfig:
     reward: RewardWeights = field(default_factory=RewardWeights)
     ablation: AblationConfig = field(default_factory=AblationConfig)
 
+    @staticmethod
+    def _build_section(section_name: str, section_type, raw: dict):
+        if not isinstance(raw, dict):
+            raise ValueError(f"config section {section_name!r} must be a mapping")
+        allowed = set(section_type.__dataclass_fields__)
+        unknown = sorted(set(raw) - allowed)
+        if unknown:
+            raise ValueError(
+                f"unknown config keys in {section_name}: {', '.join(unknown)}")
+        return section_type(**raw)
+
     @classmethod
     def from_dict(cls, d: dict) -> "EvoCoConfig":
+        if not isinstance(d, dict):
+            raise ValueError("config must contain a mapping")
+        allowed_sections = {
+            "project", "data", "models", "contract", "training",
+            "runtime", "small_policy", "reward", "ablation",
+        }
+        unknown_sections = sorted(set(d) - allowed_sections)
+        if unknown_sections:
+            raise ValueError(
+                f"unknown top-level config sections: {', '.join(unknown_sections)}")
         proj = d.get("project", {})
+        if not isinstance(proj, dict):
+            raise ValueError("config section 'project' must be a mapping")
+        unknown_project = sorted(set(proj) - {"name", "seed", "output_dir"})
+        if unknown_project:
+            raise ValueError(
+                f"unknown config keys in project: {', '.join(unknown_project)}")
         reward_raw = d.get("reward", {})
         return cls(
             name=proj.get("name", "evoco_rag_popqa"),
             seed=proj.get("seed", 42),
             output_dir=proj.get("output_dir", "../rag_assets/outputs/evoco_popqa"),
-            data=DataConfig(**{k: v for k, v in d.get("data", {}).items()
-                               if k in DataConfig.__dataclass_fields__}),
-            models=ModelsConfig(**{k: v for k, v in d.get("models", {}).items()
-                                   if k in ModelsConfig.__dataclass_fields__}),
-            contract=ContractConfig(**{k: v for k, v in d.get("contract", {}).items()
-                                       if k in ContractConfig.__dataclass_fields__}),
-            training=TrainingConfig(**{k: v for k, v in d.get("training", {}).items()
-                                       if k in TrainingConfig.__dataclass_fields__}),
-            runtime=RuntimeConfig(**{k: v for k, v in d.get("runtime", {}).items()
-                                     if k in RuntimeConfig.__dataclass_fields__}),
-            small_policy=SmallPolicyConfig(**{k: v for k, v in d.get("small_policy", {}).items()
-                                              if k in SmallPolicyConfig.__dataclass_fields__}),
-            reward=RewardWeights(**{k: v for k, v in reward_raw.items()
-                                    if k in RewardWeights.__dataclass_fields__}),
-            ablation=AblationConfig(**{k: v for k, v in d.get("ablation", {}).items()
-                                       if k in AblationConfig.__dataclass_fields__}),
+            data=cls._build_section("data", DataConfig, d.get("data", {})),
+            models=cls._build_section("models", ModelsConfig, d.get("models", {})),
+            contract=cls._build_section(
+                "contract", ContractConfig, d.get("contract", {})),
+            training=cls._build_section(
+                "training", TrainingConfig, d.get("training", {})),
+            runtime=cls._build_section("runtime", RuntimeConfig, d.get("runtime", {})),
+            small_policy=cls._build_section(
+                "small_policy", SmallPolicyConfig, d.get("small_policy", {})),
+            reward=cls._build_section("reward", RewardWeights, reward_raw),
+            ablation=cls._build_section(
+                "ablation", AblationConfig, d.get("ablation", {})),
         )
 
     @classmethod

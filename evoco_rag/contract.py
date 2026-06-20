@@ -89,7 +89,12 @@ def build_contract(
     ranked = sorted(ranked_docs, key=lambda d: d["score"], reverse=True)
     topk = ranked[:top_k]
 
-    confidences = [_sigmoid(d["score"]) for d in topk]
+    # Prefer the trainable calibration head when available. Falling back to a
+    # sigmoid of the reranker logit keeps legacy/no-head configs compatible.
+    confidences = [
+        float(d.get("policy_confidence", _sigmoid(d["score"])))
+        for d in topk
+    ]
     top1_conf = confidences[0] if confidences else 0.0
     margin = (confidences[0] - confidences[1]) if len(confidences) >= 2 else top1_conf
 

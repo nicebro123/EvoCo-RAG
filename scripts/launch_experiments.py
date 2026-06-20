@@ -20,6 +20,7 @@ import argparse
 import os
 import shlex
 import subprocess
+import sys
 from copy import deepcopy
 from datetime import datetime
 from pathlib import Path
@@ -27,9 +28,14 @@ from typing import Any, Iterable, Mapping, MutableMapping
 
 import yaml
 
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from evoco_rag.config import EvoCoConfig
+
 
 DEFAULT_TRAIN_SCRIPT = "scripts/train_evoco.py"
 DEFAULT_EVAL_SCRIPT = "scripts/eval_evoco.py"
+EVALUATION_PROTOCOL_VERSION = 2
 
 
 def read_yaml(path: Path) -> dict[str, Any]:
@@ -200,6 +206,9 @@ def build_run(
         overrides["training.large_batch_size"] = int(experiment["large_batch_size"])
 
     config = apply_overrides(base_config, overrides)
+    # Fail before launching an expensive run when a dotted override is stale or
+    # misspelled. EvoCoConfig performs strict section/key validation.
+    EvoCoConfig.from_dict(config)
     study_dir = resolve_study_dir(spec, spec_path)
     run_name = str(experiment.get("run_name") or format_run_name(index, experiment))
     run_dir = study_dir / run_name
@@ -266,6 +275,7 @@ def build_run(
 
 def write_manifest(study_dir: Path, runs: list[Mapping[str, Any]], spec_path: Path) -> None:
     manifest = {
+        "evaluation_protocol_version": EVALUATION_PROTOCOL_VERSION,
         "created_at": datetime.now().isoformat(timespec="seconds"),
         "spec": str(spec_path.resolve()),
         "runs": [
@@ -300,6 +310,7 @@ def shell_command(run: Mapping[str, Any]) -> str:
     log_path = shlex.quote(str(run["log_path"]))
     eval_log_path = shlex.quote(str(run["eval_log_path"]))
     train_marker = shlex.quote(str(run["train_marker_path"]))
+    completion_marker = shlex.quote(str(run["completion_marker_path"]))
     env_prefix = (
         f"CUDA_VISIBLE_DEVICES={shlex.quote(str(run['gpu']))} "
         if run.get("gpu") is not None
@@ -309,10 +320,15 @@ def shell_command(run: Mapping[str, Any]) -> str:
     if not run.get("eval_after_train"):
         return f"mkdir -p {run_dir} && {train_part}"
     eval_part = f"{env_prefix}{eval_command} 2>&1 | tee {eval_log_path}"
+    post_train_eval = (
+        f"if [ -f {completion_marker} ]; then "
+        "echo 'final-round test metrics found; skip duplicate eval'; "
+        f"else {eval_part}; fi"
+    )
     if not run.get("overwrite"):
         eval_only_part = f"echo 'train complete marker found; running eval only' && {eval_part}"
-        return f"mkdir -p {run_dir} && if [ -f {train_marker} ]; then {eval_only_part}; else {train_part} && {eval_part}; fi"
-    return f"mkdir -p {run_dir} && {train_part} && {eval_part}"
+        return f"mkdir -p {run_dir} && if [ -f {train_marker} ]; then {eval_only_part}; else {train_part} && {post_train_eval}; fi"
+    return f"mkdir -p {run_dir} && {train_part} && {post_train_eval}"
 
 
 def write_gpu_scripts(study_dir: Path, runs: list[Mapping[str, Any]]) -> Path:
@@ -412,6 +428,9 @@ def launch_run(run: Mapping[str, Any]) -> int:
         train_code = stream_command(run["command"], run["log_path"], env)
     if train_code != 0 or not run.get("eval_after_train"):
         return train_code
+    if Path(run["completion_marker_path"]).exists():
+        print("Final-round test metrics found; skip duplicate evaluation.")
+        return 0
     return stream_command(run["eval_command"], run["eval_log_path"], env)
 
 

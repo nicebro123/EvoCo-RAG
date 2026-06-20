@@ -95,11 +95,16 @@ class ReplayBuffer:
     ) -> list[dict]:
         """产出小模型训练样本：每条含 positive / negative doc_ids。
 
-        只保留 audit 可信、且 positive 或 negative 至少一侧非空的样本。
+        新版 rule-verifier 标签由 gold/evidence 规则直接产生，不依赖大模型审计
+        可信度；旧 replay 仍保留 min_trust 过滤以避免兼容路径引入噪声。
         """
         pairs = []
         for e in exps:
-            if e.verification.get("audit_trust_weight", 0.0) < min_trust:
+            source = e.training_targets.get("small_target_source")
+            if (
+                source != "gold_rule_verifier"
+                and e.verification.get("audit_trust_weight", 0.0) < min_trust
+            ):
                 continue
             tt = e.training_targets
             pos = tt.get("small_positive_doc_ids", [])

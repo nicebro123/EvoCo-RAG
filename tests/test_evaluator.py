@@ -19,13 +19,17 @@ class RecordingLarge:
     def __init__(self):
         self.calls = []
 
-    def generate_audit_batch(self, samples, contracts, show_gold, round_id, batch_size):
+    def generate_audit_batch(
+        self, samples, contracts, show_gold, round_id, batch_size,
+        candidate_counts=None,
+    ):
         self.calls.append({
             "contracts": contracts,
             "contract": contracts[0] if contracts else None,
             "show_gold": show_gold,
             "round_id": round_id,
             "batch_size": batch_size,
+            "candidate_counts": candidate_counts,
         })
         return [
             (make_audit(final_answer="politician", used_doc_ids=[0]), True)
@@ -56,6 +60,7 @@ def test_run_inference_passes_action_policy_config():
     assert large.calls[0]["show_gold"] is False
     assert large.calls[0]["round_id"] == 2
     assert large.calls[0]["batch_size"] == 3
+    assert large.calls[0]["candidate_counts"] == [cfg.runtime.num_audit_candidates]
 
 
 def test_run_inference_no_action_ablation_forces_answer_now():
@@ -67,3 +72,22 @@ def test_run_inference_no_action_ablation_forces_answer_now():
     Evaluator(cfg, small, large).run_inference([make_sample()])
 
     assert large.calls[0]["contract"].retrieval_action == RetrievalAction.ANSWER_NOW
+    assert large.calls[0]["candidate_counts"] == [1]
+
+
+def test_run_inference_streams_prediction_chunks(tmp_path):
+    cfg = EvoCoConfig()
+    cfg.runtime.audit_batch_size = 1
+    cfg.runtime.progress_interval = 2
+    small = RecordingSmall(action=RetrievalAction.ANSWER_NOW)
+    large = RecordingLarge()
+    path = tmp_path / "predictions.jsonl"
+
+    metrics = Evaluator(cfg, small, large).run_inference(
+        [make_sample(), make_sample(), make_sample()],
+        predictions_path=str(path),
+    )
+
+    assert metrics["num_examples"] == 3
+    assert len(large.calls) == 2
+    assert sum(1 for _ in path.open(encoding="utf-8")) == 3

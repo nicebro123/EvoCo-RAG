@@ -69,7 +69,11 @@ class SmallTrainer:
             params.extend(policy_heads.parameters())
         optimizer = Adam(params, lr=self.lr)
 
-        usable = [p for p in pairs if p["positive_doc_ids"] and p["negative_doc_ids"]]
+        usable = [
+            p for p in pairs
+            if p.get("documents")
+            and (p.get("positive_doc_ids") or p.get("negative_doc_ids"))
+        ]
         if not usable:
             return {"trained_samples": 0, "skipped": len(pairs), "avg_loss": None}
 
@@ -108,8 +112,8 @@ class SmallTrainer:
                 )
                 scores = out.logits.view(-1)
 
-                batch_loss = 0.0
-                valid = 0
+                batch_loss = scores.sum() * 0.0
+                rank_valid = 0
                 for i in range(len(pos_lens)):
                     s, e = split[i], split[i + 1]
                     pl = pos_lens[i]
@@ -119,10 +123,8 @@ class SmallTrainer:
                     neg_scores = scores[s + pl:e]
                     for ps in pos_scores:
                         batch_loss = batch_loss + torch.sum(F.relu(neg_scores - ps + self.margin))
-                    valid += 1
-                if valid == 0:
-                    continue
-                rank_loss = batch_loss / valid
+                    rank_valid += 1
+                rank_loss = batch_loss / rank_valid if rank_valid else scores.sum() * 0.0
                 loss = rank_loss
                 evidence_loss = torch.tensor(0.0, device=device)
                 action_loss = torch.tensor(0.0, device=device)
@@ -169,6 +171,9 @@ class SmallTrainer:
                                 action_correct += int((preds == labels).sum().item())
                                 action_total += int(labels.numel())
 
+                if rank_valid == 0 and policy_heads is None:
+                    continue
+
                 optimizer.zero_grad()
                 loss.backward()
                 optimizer.step()
@@ -180,6 +185,8 @@ class SmallTrainer:
                 steps += 1
 
         policy_enabled = policy_heads is not None
+        if steps and policy_enabled:
+            self.policy.policy_heads_loaded = True
         result = {
             "trained_samples": len(usable),
             "skipped": len(pairs) - len(usable),

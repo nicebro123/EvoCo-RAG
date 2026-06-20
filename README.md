@@ -291,9 +291,46 @@ watch -n 1 nvidia-smi
 Full experiment outputs:
 
 ```text
-../rag_assets/outputs/experiments/evoco_all_experiments/
-../rag_assets/checkpoints/
+../rag_assets/outputs/experiments/<study_name>_v2/<run_name>/
+├── train.log
+├── eval.log
+├── replay/
+├── audits/
+└── metrics/
+    ├── round_000.json
+    ├── test_predictions_round_000.jsonl
+    ├── test_eval_round_000.json
+    ├── test_predictions.jsonl
+    └── test_eval.json
+
+../rag_assets/checkpoints/experiments/<study_name>_v2/<run_name>/
 ```
+
+Protocol-v2 metrics enforce non-empty schema-valid answers, record actual
+generation/audit execution, and persist per-example test predictions. Do not
+merge older protocol-v1 results with these runs.
+
+Every training round performs an independent test-set inference after both
+models are updated. Full configs use the complete test split; fast/debug configs
+use their configured `data.eval_size` or `data.debug_size` subset. Each round
+writes `test_eval_round_NNN.json` and `test_predictions_round_NNN.jsonl`.
+Training stops with an error if any required per-round test evaluation cannot
+run, so a training-replay diagnostic is never reported as a test result. The
+last round is also published as `test_eval.json` and `test_predictions.jsonl`;
+the launcher reuses these files instead of running the same final evaluation
+twice.
+
+After the queue finishes, aggregate all protocol-v2 runs into one summary and
+accuracy/cost ranking table:
+
+```bash
+python scripts/summarize_experiments.py \
+  --root ../rag_assets/outputs/experiments
+```
+
+The command writes JSON and CSV files under
+`../rag_assets/outputs/experiments/summary_v2/`. Incomplete runs and old
+protocol results remain visible in the summary but are excluded from ranking.
 
 The official queue uses full datasets and runs PopQA sweeps, PopQA
 hyperparameter studies, multi-dataset checks, and mechanism ablations. Detailed

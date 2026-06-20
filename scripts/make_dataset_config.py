@@ -124,11 +124,8 @@ training:
   num_rounds: {num_rounds}
   batch_size: {args.batch_size}
   large_batch_size: {args.large_batch_size}
-  num_generations: {args.num_generations}
   small_lr: 5.0e-5
   large_lr: 1.0e-5
-  train_small_lora: true
-  train_large_lora: true
 
 reward:
   answer_weight: 1.0
@@ -184,7 +181,6 @@ def parse_args():
     parser.add_argument("--max-completion-length", type=int, default=512)
     parser.add_argument("--batch-size", type=int, default=8)
     parser.add_argument("--large-batch-size", type=int, default=2)
-    parser.add_argument("--num-generations", type=int, default=1)
     return parser.parse_args()
 
 

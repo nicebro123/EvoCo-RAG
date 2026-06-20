@@ -422,18 +422,18 @@ class LargeGeneratorAuditor:
 
 - 构造大模型审计 prompt。
 - 解析大模型输出为 `LargeAudit`。
-- 对不合法字段做降级。
+- 严格校验必需字段、枚举和证据结构；非法输出进入显式 fallback，不参与有效答案统计。
 
 审计 prompt 必须包含：
 
 1. 问题；
-2. 标准答案仅训练时可见，测试时不可见；
+2. 运行时生成 prompt 永远不包含标准答案；
 3. 小模型 selected evidence；
 4. top-k candidate docs；
 5. JSON schema；
 6. failure_type 定义。
 
-训练阶段可以让大模型看到 gold answers 来做 teacher audit；评估阶段不能把 gold answers 放入生成 prompt。
+训练和评估生成阶段都不能把 gold answers 放入 prompt。gold 只允许在生成完成后由规则验证器使用，并据此构造证据支持的纠错 SFT target，避免训练/测试分布偏移。
 
 ### 5.7 `verifier.py`
 
@@ -573,7 +573,7 @@ for round_id in range(num_rounds):
 
 ```text
 debug_size=16
-num_generations=2
+runtime.num_audit_candidates=2
 训练和测试流程能跑完
 输出 baseline metrics JSON
 ```
@@ -733,9 +733,8 @@ f1 可选
 检索：
 
 ```text
-Recall@1
-Recall@3
-MRR
+recall_at_k
+mrr
 answer_in_topk_context_rate
 ```
 
@@ -744,6 +743,7 @@ answer_in_topk_context_rate
 ```text
 evidence_support_rate
 citation_correctness
+evidence_quote_support_rate
 used_doc_precision
 unsupported_answer_rate
 ```
@@ -752,16 +752,31 @@ unsupported_answer_rate
 
 ```text
 avg_selected_docs
-avg_ranked_docs
+generator_call_rate
 audit_call_rate
+avg_generation_candidates
+empty_answer_rate
+unfulfilled_action_rate
+avg_total_cost_penalty
 cost_per_correct_answer
+```
+
+审计可靠性：
+
+```text
+audit_schema_valid_rate
+audit_parse_status_distribution
+audit_schema_error_distribution
+audit_trust_weight_mean
+low_trust_rate
+audit_self_consistency_mean
 ```
 
 校准：
 
 ```text
 confidence_success_correlation
-ECE 可选
+ece
 ```
 
 ### 7.2 消融实验
@@ -826,11 +841,8 @@ training:
   num_rounds: 3
   batch_size: 4
   large_batch_size: 2
-  num_generations: 2
   small_lr: 5.0e-5
   large_lr: 1.0e-5
-  train_small_lora: true
-  train_large_lora: true
 
 reward:
   answer_weight: 1.0
@@ -1202,7 +1214,7 @@ training_targets
 
 1. 不增加 action head，只用启发式 action。
 2. 不做 span-level 训练，只做 document-level evidence contract。
-3. 大模型审计训练阶段可见 gold answers，测试阶段不可见。
+3. 大模型训练和测试生成 prompt 均不可见 gold；gold 仅用于生成后的规则验证和纠错 target。
 4. 小模型先只训练 ranking LoRA。
 5. 大模型先只保留现有 GRPO 训练，reward 换成 decomposed reward。
 

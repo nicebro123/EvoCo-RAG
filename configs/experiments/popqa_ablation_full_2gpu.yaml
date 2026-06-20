@@ -9,7 +9,7 @@
 # Dry run:
 #   python scripts/launch_experiments.py --spec configs/experiments/popqa_ablation_full_2gpu.yaml
 
-study_name: evoco_popqa_ablation_full_2gpu
+study_name: evoco_popqa_ablation_full_2gpu_v2
 output_root: ../rag_assets/outputs/experiments
 checkpoint_root: ../rag_assets/checkpoints/experiments
 base_config: configs/local/popqa_standard_full.yaml
@@ -30,7 +30,6 @@ overrides:
   runtime.replay_flush_interval: 10
   training.batch_size: 4
   training.large_batch_size: 2
-  training.num_generations: 2
 
 experiments:
   - name: evoco_full
@@ -56,12 +55,10 @@ experiments:
   - name: small_only
     overrides:
       ablation.train_large_lora: false
-      training.train_large_lora: false
 
   - name: large_only
     overrides:
       ablation.train_small_lora: false
-      training.train_small_lora: false
 
   - name: baseline_current_corag
     overrides:
@@ -69,7 +66,6 @@ experiments:
       ablation.use_action_policy: false
       ablation.use_decomposed_reward: false
       ablation.train_large_lora: false
-      training.train_large_lora: false
       small_policy.use_policy_heads: false
       contract.action_mode: heuristic
       runtime.num_audit_candidates: 1

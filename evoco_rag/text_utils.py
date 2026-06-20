@@ -35,7 +35,8 @@ def exact_presence(answers: list[str], context: str) -> bool:
     """任一标准答案（归一化后）作为子串出现在 context 中即视为命中。"""
     norm_context = normalize_answer(context)
     for ans in answers:
-        if normalize_answer(ans) in norm_context:
+        normalized = normalize_answer(ans)
+        if normalized and normalized in norm_context:
             return True
     return False
 

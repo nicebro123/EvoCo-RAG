@@ -33,7 +33,6 @@ experiments:
       runtime.max_completion_length: 1024
       training.batch_size: 4
       training.large_batch_size: 2
-      training.num_generations: 2
 
   - name: top8_audit5
     overrides:
@@ -46,7 +45,6 @@ experiments:
       runtime.max_completion_length: 1024
       training.batch_size: 4
       training.large_batch_size: 2
-      training.num_generations: 2
 
   - name: high_conf_065_top5
     overrides:

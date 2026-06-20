@@ -4,7 +4,7 @@ CoevolutionTrainer 在 small=None / large=None 时走纯逻辑分支，可在 CP
 合约 → 验证 → reward → replay → 指标 的整条链路不抛错、产物结构正确。
 """
 
-from conftest import make_sample
+from conftest import make_audit, make_contract, make_sample
 
 from evoco_rag.config import EvoCoConfig
 from evoco_rag.trainers.coevolution_trainer import CoevolutionTrainer
@@ -113,3 +113,36 @@ def test_run_round_resumes_partial_replay_and_records_timing(tmp_path, capsys):
     assert sum(1 for _ in replay_path.open(encoding="utf-8")) == 2
     assert sum(1 for _ in contracts_path.open(encoding="utf-8")) == 2
     assert sum(1 for _ in audits_path.open(encoding="utf-8")) == 2
+
+
+def test_training_experience_never_exposes_gold_to_generator(tmp_path):
+    cfg = EvoCoConfig()
+    cfg.output_dir = str(tmp_path / "out")
+    cfg.runtime.num_audit_candidates = 3
+    cfg.ablation.train_small_lora = False
+    cfg.ablation.train_large_lora = False
+
+    class Small:
+        def build_contract(self, sample, **kwargs):
+            return make_contract(selected_doc_ids=[0], action="ask_auditor")
+
+    class Large:
+        def __init__(self):
+            self.call = None
+
+        def generate_audit_batch(
+            self, samples, contracts, show_gold, round_id, batch_size,
+            candidate_counts=None,
+        ):
+            self.call = {
+                "show_gold": show_gold,
+                "candidate_counts": candidate_counts,
+            }
+            return [(make_audit("politician", [0]), True) for _ in samples]
+
+    large = Large()
+    trainer = CoevolutionTrainer(cfg, Small(), large)
+    trainer.make_experiences([make_sample()], round_id=0)
+
+    assert large.call["show_gold"] is False
+    assert large.call["candidate_counts"] == [3]

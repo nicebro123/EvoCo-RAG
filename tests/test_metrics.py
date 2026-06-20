@@ -25,13 +25,19 @@ def test_metrics_keys_and_accuracy():
     m = compute_metrics(exps)
     for key in ("accuracy", "recall_at_k", "mrr", "evidence_support_rate",
                 "citation_correctness", "unsupported_answer_rate",
-                "avg_selected_docs", "audit_call_rate",
+                "evidence_quote_support_rate",
+                "avg_selected_docs", "generator_call_rate", "audit_call_rate",
+                "audit_nonempty_output_rate", "avg_generation_candidates",
+                "empty_answer_rate", "unfulfilled_action_rate",
                 "attribution_case_distribution", "wrong_retriever_reward_rate",
                 "audit_json_valid_rate", "audit_trust_weight_mean",
+                "audit_schema_valid_rate", "audit_parse_status_distribution",
+                "audit_schema_error_distribution",
                 "avg_action_cost_penalty", "avg_total_cost_penalty",
                 "accuracy_cost_pareto_point"):
         assert key in m
     assert m["num_examples"] == 2
+    assert m["evaluation_protocol_version"] == 2
     assert m["accuracy"] == 50.0  # 一对一错
     assert "avg_total_cost_penalty" in m["accuracy_cost_pareto_point"]
 
@@ -48,3 +54,37 @@ def test_unsupported_answer_rate():
 
 def test_empty_metrics():
     assert compute_metrics([]) == {}
+
+
+def test_execution_metrics_use_audit_metadata_not_nonempty_answer():
+    sample = make_sample()
+    contract = make_contract(selected_doc_ids=[0])
+    audit = make_audit(final_answer="politician", used_doc_ids=[0])
+    audit.audit_metadata = {
+        "generator_called": True,
+        "generation_candidate_count": 3,
+        "extra_audit_called": True,
+        "action_fallback": False,
+    }
+    v = verify(sample, contract, audit)
+    r = compute_decomposed_reward(sample, contract, audit, v)
+    t = build_training_targets(sample, contract, audit, v, r)
+    exp = ReplayExperience(
+        sample_id=sample.sample_id,
+        round=0,
+        question=sample.question,
+        answers=sample.answers,
+        documents=sample.documents,
+        contract=contract.to_dict(),
+        audit=audit.to_dict(),
+        verification=v.to_dict(),
+        rewards=r.to_dict(),
+        training_targets=t,
+    )
+
+    metrics = compute_metrics([exp])
+    assert metrics["generator_call_rate"] == 1.0
+    assert metrics["audit_call_rate"] == 1.0
+    assert metrics["avg_generation_candidates"] == 3.0
+    assert metrics["audit_nonempty_output_rate"] == 1.0
+    assert metrics["empty_answer_rate"] == 0.0

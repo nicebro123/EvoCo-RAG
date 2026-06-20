@@ -3,7 +3,11 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
 import yaml
+
+from evoco_rag.config import EvoCoConfig
+from scripts.launch_experiments import apply_overrides
 
 
 def _write_base_config(path: Path) -> None:
@@ -35,6 +39,12 @@ training:
 """,
         encoding="utf-8",
     )
+
+
+def test_stale_override_is_rejected_before_launch():
+    config = apply_overrides({}, {"training.num_generations": 2})
+    with pytest.raises(ValueError, match="unknown config keys in training"):
+        EvoCoConfig.from_dict(config)
 
 
 def test_launch_experiments_dry_run_materializes_configs(tmp_path):
@@ -91,6 +101,7 @@ def test_launch_experiments_dry_run_materializes_configs(tmp_path):
     assert second["contract"]["top_k"] == 5
     assert second["runtime"]["audit_batch_size"] == 2
     assert len(manifest["runs"]) == 2
+    assert manifest["evaluation_protocol_version"] == 2
     assert manifest["runs"][0]["eval_after_train"] is True
     assert manifest["runs"][0]["eval_log_path"].endswith("eval.log")
     assert manifest["runs"][0]["train_marker_path"].endswith("metrics/round_000.json")
@@ -100,6 +111,7 @@ def test_launch_experiments_dry_run_materializes_configs(tmp_path):
     assert "metrics/test_eval.json" in gpu_script
     assert "eval.log" in gpu_script
     assert "train complete marker found" in gpu_script
+    assert "final-round test metrics found; skip duplicate eval" in gpu_script
     assert "tmux has-session" in tmux_script
     assert (study_dir / "launch_tmux.sh").exists()
 

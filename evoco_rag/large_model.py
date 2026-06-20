@@ -77,6 +77,7 @@ class LargeGeneratorAuditor:
     def _generate(self, messages: list[dict], temperature: float) -> str:
         import torch
 
+        self.model.eval()
         prompt = self.tokenizer.apply_chat_template(
             messages, tokenize=False, add_generation_prompt=True)
         inputs = self.tokenizer(
@@ -106,6 +107,7 @@ class LargeGeneratorAuditor:
         old_padding_side = getattr(self.tokenizer, "padding_side", "left")
         self.tokenizer.padding_side = "left"
         try:
+            self.model.eval()
             prompts = [
                 self.tokenizer.apply_chat_template(
                     messages, tokenize=False, add_generation_prompt=True)
@@ -242,17 +244,19 @@ class LargeGeneratorAuditor:
     def _select_best_candidate(
         self,
         sample: RagSample,
+        contract: EvidenceContract,
         candidates: list[dict],
     ) -> tuple[LargeAudit, bool]:
         best = max(candidates, key=lambda x: (x["score"], x["json_valid"], -x["attempt"]))
 
+        valid_candidates = [c for c in candidates if c["json_valid"]]
         answers = [
             (c["audit"].final_answer or "").strip().lower()
-            for c in candidates
+            for c in valid_candidates
             if c["audit"].final_answer
         ]
-        support_levels = [c["audit"].support_level for c in candidates]
-        failure_types = [c["audit"].failure_type for c in candidates]
+        support_levels = [c["audit"].support_level for c in valid_candidates]
+        failure_types = [c["audit"].failure_type for c in valid_candidates]
 
         def majority_ratio(values: list[str]) -> float:
             if not values:
@@ -286,6 +290,21 @@ class LargeGeneratorAuditor:
         best_audit.audit_metadata = {
             **(best_audit.audit_metadata or {}),
             "num_candidates": len(candidates),
+            "generator_called": True,
+            "generation_candidate_count": len(candidates),
+            "extra_audit_called": len(candidates) > 1,
+            "requested_action": contract.retrieval_action,
+            "action_executed": (
+                contract.retrieval_action in {"answer_now", "ask_auditor"}
+                or bool(contract.uncertainty.get("retrieval_expanded"))
+            ),
+            "action_fallback": (
+                contract.retrieval_action == "rewrite_query"
+                or (
+                    contract.retrieval_action == "retrieve_more"
+                    and not contract.uncertainty.get("retrieval_expanded")
+                )
+            ),
             "selected_attempt": best["attempt"],
             "selected_candidate_score": best["score"],
             "self_consistency": self_consistency,
@@ -300,6 +319,7 @@ class LargeGeneratorAuditor:
         show_gold: bool = False,
         round_id: int = 0,
         batch_size: int | None = None,
+        candidate_counts: list[int] | None = None,
     ) -> list[tuple[LargeAudit, bool]]:
         """Batch audit generation. Candidate attempts stay semantically identical to generate_audit."""
         if len(samples) != len(contracts):
@@ -313,30 +333,38 @@ class LargeGeneratorAuditor:
         ]
         candidates: list[list[dict]] = [[] for _ in samples]
         effective_batch = max(1, int(batch_size or self.audit_batch_size))
+        if candidate_counts is None:
+            planned_counts = [self.num_audit_candidates] * len(samples)
+        else:
+            if len(candidate_counts) != len(samples):
+                raise ValueError("candidate_counts must match samples")
+            planned_counts = [max(1, int(value)) for value in candidate_counts]
 
-        total_candidates = self.num_audit_candidates
+        total_candidates = max(planned_counts)
         for attempt in range(total_candidates):
             temperature = 0.0 if attempt == 0 else self.audit_temperature
-            for start in range(0, len(samples), effective_batch):
-                end = start + effective_batch
-                texts = self._generate_many(messages[start:end], temperature=temperature)
-                if len(texts) != len(messages[start:end]):
+            active = [idx for idx, count in enumerate(planned_counts) if attempt < count]
+            for start in range(0, len(active), effective_batch):
+                chunk = active[start:start + effective_batch]
+                texts = self._generate_many(
+                    [messages[idx] for idx in chunk],
+                    temperature=temperature,
+                )
+                if len(texts) != len(chunk):
                     raise RuntimeError(
                         "batch audit generation returned a different number of outputs")
                 for offset, text in enumerate(texts):
-                    idx = start + offset
+                    idx = chunk[offset]
                     candidates[idx].append(self._candidate_from_text(
                         samples[idx], contracts[idx], text, round_id, attempt, temperature))
 
-        extra_retries = max(0, self.json_retry - total_candidates)
+        attempts_done = list(planned_counts)
         retry_indices = [
             idx for idx, sample_candidates in enumerate(candidates)
             if not any(c["json_valid"] for c in sample_candidates)
+            and attempts_done[idx] < self.json_retry
         ]
-        for retry in range(extra_retries):
-            if not retry_indices:
-                break
-            attempt = total_candidates + retry
+        while retry_indices:
             next_retry_indices = []
             for start in range(0, len(retry_indices), effective_batch):
                 chunk = retry_indices[start:start + effective_batch]
@@ -349,16 +377,21 @@ class LargeGeneratorAuditor:
                         "batch audit retry returned a different number of outputs")
                 for offset, text in enumerate(texts):
                     idx = chunk[offset]
+                    attempt = attempts_done[idx]
                     candidates[idx].append(self._candidate_from_text(
                         samples[idx], contracts[idx], text, round_id, attempt,
                         self.audit_temperature))
-                    if not any(c["json_valid"] for c in candidates[idx]):
+                    attempts_done[idx] += 1
+                    if (
+                        not any(c["json_valid"] for c in candidates[idx])
+                        and attempts_done[idx] < self.json_retry
+                    ):
                         next_retry_indices.append(idx)
             retry_indices = next_retry_indices
 
         return [
-            self._select_best_candidate(sample, sample_candidates)
-            for sample, sample_candidates in zip(samples, candidates)
+            self._select_best_candidate(sample, contract, sample_candidates)
+            for sample, contract, sample_candidates in zip(samples, contracts, candidates)
         ]
 
     def generate_audit(
@@ -367,10 +400,17 @@ class LargeGeneratorAuditor:
         contract: EvidenceContract,
         show_gold: bool = False,
         round_id: int = 0,
+        candidate_count: int | None = None,
     ) -> tuple[LargeAudit, bool]:
         """生成审计，带 JSON 重试与降级。返回 (LargeAudit, json_valid)。"""
         return self.generate_audit_batch(
-            [sample], [contract], show_gold=show_gold, round_id=round_id, batch_size=1)[0]
+            [sample],
+            [contract],
+            show_gold=show_gold,
+            round_id=round_id,
+            batch_size=1,
+            candidate_counts=([candidate_count] if candidate_count is not None else None),
+        )[0]
 
     def save_lora(self, out_dir: str) -> None:
         self.model.save_pretrained(out_dir)

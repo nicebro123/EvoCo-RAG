@@ -1,5 +1,6 @@
 from pathlib import Path
 
+import pytest
 import yaml
 
 from evoco_rag.config import EvoCoConfig
@@ -42,3 +43,8 @@ def test_all_yaml_configs_load_and_keep_assets_outside_repo():
 
     assert len(output_dirs) == len(paths)
     assert len(checkpoint_dirs) == len(paths) * 2
+
+
+def test_unknown_config_key_is_rejected():
+    with pytest.raises(ValueError, match="unknown config keys in training"):
+        EvoCoConfig.from_dict({"training": {"num_generations": 2}})
