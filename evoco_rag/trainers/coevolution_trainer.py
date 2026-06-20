@@ -327,14 +327,12 @@ class CoevolutionTrainer:
 
         # 训练小模型
         small_started = time.time()
+        small_dir = None
         if self.cfg.ablation.train_small_lora and self.small_trainer is not None:
             exps = self.replay.read(round_id)
             pairs = self.replay.sample_small_training_pairs(exps)
             stats["small"] = self.small_trainer.train(pairs)
             small_dir = checkpoint_round_dir(self.cfg.models.small_lora_dir, round_id)
-            os.makedirs(small_dir, exist_ok=True)
-            self.small_trainer.save(small_dir)
-            stats["small_checkpoint"] = small_dir
         stats["timing"]["small_training_seconds"] = round(time.time() - small_started, 4)
         print(
             f"round {round_id}: small training "
@@ -344,15 +342,13 @@ class CoevolutionTrainer:
 
         # 训练大模型
         large_started = time.time()
+        large_dir = None
         if self.cfg.ablation.train_large_lora and self.large_trainer is not None:
             exps = self.replay.read(round_id)
             sft = self.replay.sample_large_sft(exps)
             stats["large"] = self.large_trainer.train_sft(
                 sft, batch_size=self.cfg.training.large_batch_size)
             large_dir = checkpoint_round_dir(self.cfg.models.large_lora_dir, round_id)
-            os.makedirs(large_dir, exist_ok=True)
-            self.large_trainer.save(large_dir)
-            stats["large_checkpoint"] = large_dir
         stats["timing"]["large_training_seconds"] = round(time.time() - large_started, 4)
         print(
             f"round {round_id}: large training "
@@ -378,6 +374,20 @@ class CoevolutionTrainer:
             stats["per_round_test_completed"] = True
             stats["train_metrics"] = train_metrics
         stats["timing"]["evaluation_seconds"] = round(time.time() - eval_started, 4)
+
+        # A checkpoint becomes resumable only after required test evaluation
+        # succeeds. If evaluation raises, no new round adapter is committed.
+        checkpoint_started = time.time()
+        if small_dir is not None:
+            os.makedirs(small_dir, exist_ok=True)
+            self.small_trainer.save(small_dir)
+            stats["small_checkpoint"] = small_dir
+        if large_dir is not None:
+            os.makedirs(large_dir, exist_ok=True)
+            self.large_trainer.save(large_dir)
+            stats["large_checkpoint"] = large_dir
+        stats["timing"]["checkpoint_save_seconds"] = round(
+            time.time() - checkpoint_started, 4)
         stats["timing"]["total_round_seconds"] = round(time.time() - round_started, 4)
         print(
             f"round {round_id}: evaluation "

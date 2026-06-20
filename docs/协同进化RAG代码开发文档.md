@@ -890,7 +890,9 @@ CUDA_VISIBLE_DEVICES=2,3 python scripts/train_evoco.py --config configs/evoco_po
 已有 `replay/round_xxx.jsonl` 中合法的样本行，跳过已经完成的 `sample_id`，并重建
 `contracts/round_xxx.jsonl` 与 `audits/round_xxx.jsonl`。损坏或半截 JSON 行会被跳过。
 这属于同一 round 内的 partial resume；`train_evoco.py --resume` 则用于已经完成
-`round_*` checkpoint 后从下一轮继续。
+逐轮测试、checkpoint 和 `metrics/round_xxx.json` 后从下一轮继续。checkpoint
+目录本身不再作为完成标记：如果进程在测试或保存阶段中断，resume 会忽略该轮
+残留 checkpoint，从上一个同时具有完整测试产物的 round 安全重跑。
 
 每轮 `metrics/round_xxx.json` 会记录阶段耗时：
 
@@ -900,6 +902,7 @@ CUDA_VISIBLE_DEVICES=2,3 python scripts/train_evoco.py --config configs/evoco_po
   "small_training_seconds": 12.3,
   "large_training_seconds": 45.6,
   "evaluation_seconds": 1.2,
+  "checkpoint_save_seconds": 3.0,
   "total_round_seconds": 182.5
 }
 ```
@@ -925,6 +928,8 @@ CUDA_VISIBLE_DEVICES=2,3 python scripts/train_evoco.py --config configs/evoco_po
 is_lora_adapter_dir(path)
 latest_round_adapter(root)
 latest_checkpoint_round(root)
+adapter_for_round(root, round_id)
+completed_training_rounds(output_dir)
 resolve_adapter_for_loading(path_or_root)
 checkpoint_round_dir(root, round_id)
 prepare_weight_layout(config)
@@ -936,7 +941,7 @@ write_weight_manifest(config)
 1. `../rag_assets/checkpoints/.../small` 和 `../rag_assets/checkpoints/.../large` 是 checkpoint root，不是 adapter 本身。
 2. 真正可加载的 adapter 必须是 `round_000` 这种子目录，并且包含 `adapter_config.json` 和 `adapter_model.safetensors` 或 `adapter_model.bin`。
 3. `train_evoco.py` 默认新训 fresh LoRA；如果 checkpoint root 已经有 `round_*`，但没有传 `--resume`，脚本会直接退出，防止误覆盖或混用旧权重。
-4. `train_evoco.py --resume` 会自动加载 checkpoint root 下最新的完整 `round_*` adapter，并从下一轮继续训练。
+4. `train_evoco.py --resume` 只加载最后一个同时具有 `metrics/round_xxx.json`、逐轮 test metrics、逐样本 predictions 和对应大小模型 adapter 的完成轮次。孤立 checkpoint 会被视为中断残留并忽略。
 5. `eval_evoco.py` 可以接收具体 adapter 目录，也可以接收 checkpoint root；如果传 root，会自动解析最新 `round_*`。
 6. 每次运行会写出 `weights_manifest.json`，记录 base model 路径、checkpoint root、最新 adapter 和 latest round，作为上机复现实验的权重依据。
 7. 消融实验每个实验拥有独立输出目录和 checkpoint root，例如 `../rag_assets/outputs/evoco_popqa/ablations/evoco_full/`，避免不同实验覆盖同一套 LoRA。

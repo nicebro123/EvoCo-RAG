@@ -227,4 +227,7 @@ models:
 ```
 
 Fresh training refuses to overwrite existing `round_*` adapters. Use `--resume`
-only when you intend to continue the same experiment.
+only when you intend to continue the same experiment. Resume advances only from
+a round that has complete per-round test metrics, predictions, round stats, and
+the required adapters. A checkpoint left by an interrupted evaluation is not
+treated as a completed round.

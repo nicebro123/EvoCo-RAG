@@ -361,6 +361,10 @@ Resume the official tmux queue if it already exists:
 tmux attach -t evoco_all_experiments
 ```
 
+For a directly interrupted training command, rerun it with `--resume`. Resume
+loads only the last round with complete test metrics, predictions, round stats,
+and model adapters; an orphan checkpoint from a failed evaluation is ignored.
+
 If a previous official queue already produced outputs and you intentionally want
 to regenerate them:
 

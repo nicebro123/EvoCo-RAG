@@ -3,8 +3,10 @@ import os
 
 from evoco_rag.config import EvoCoConfig
 from evoco_rag.weights import (
+    adapter_for_round,
     adapter_rounds,
     checkpoint_round_dir,
+    completed_training_rounds,
     is_lora_adapter_dir,
     latest_checkpoint_round,
     latest_round_adapter,
@@ -40,7 +42,43 @@ def test_latest_round_adapter_prefers_highest_complete_round(tmp_path):
     assert latest_round_adapter(str(tmp_path)) == str(latest)
     assert resolve_adapter_for_loading(str(tmp_path)) == str(latest)
     assert latest_checkpoint_round(str(tmp_path)) == 2
+    assert adapter_for_round(str(tmp_path), 2) == str(latest)
+    assert adapter_for_round(str(tmp_path), 3) is None
     assert [rid for rid, _ in adapter_rounds(str(tmp_path))] == [0, 2]
+
+
+def test_completed_training_rounds_require_all_test_artifacts(tmp_path):
+    metrics = tmp_path / "outputs" / "metrics"
+    metrics.mkdir(parents=True)
+    complete = {
+        "round": 0,
+        "eval_source": "test_generalization",
+        "per_round_test_completed": True,
+    }
+    (metrics / "round_000.json").write_text(json.dumps(complete), encoding="utf-8")
+    test_metrics = {
+        "evaluation_protocol_version": 2,
+        "round": 0,
+        "eval_split": "test",
+        "num_examples": 1,
+    }
+    (metrics / "test_eval_round_000.json").write_text(
+        json.dumps(test_metrics), encoding="utf-8")
+    (metrics / "test_predictions_round_000.jsonl").write_text("{}\n", encoding="utf-8")
+
+    incomplete = {**complete, "round": 1}
+    (metrics / "round_001.json").write_text(json.dumps(incomplete), encoding="utf-8")
+    (metrics / "test_eval_round_001.json").write_text(
+        json.dumps({**test_metrics, "round": 1}), encoding="utf-8")
+    (metrics / "round_002.json").write_text("{broken", encoding="utf-8")
+    truncated = {**complete, "round": 3}
+    (metrics / "round_003.json").write_text(json.dumps(truncated), encoding="utf-8")
+    (metrics / "test_eval_round_003.json").write_text(
+        json.dumps({**test_metrics, "round": 3}), encoding="utf-8")
+    (metrics / "test_predictions_round_003.jsonl").write_text(
+        "{broken\n", encoding="utf-8")
+
+    assert completed_training_rounds(str(tmp_path / "outputs")) == [0]
 
 
 def test_resolve_direct_adapter_and_empty_root(tmp_path):

@@ -28,6 +28,7 @@ ADAPTER_MODEL_FILES = (
     "adapter_model.bin",
 )
 ROUND_RE = re.compile(r"^round_(\d+)$")
+ROUND_METRICS_RE = re.compile(r"^round_(\d+)\.json$")
 
 
 def is_lora_adapter_dir(path: Optional[str]) -> bool:
@@ -64,6 +65,73 @@ def latest_round_adapter(root: Optional[str]) -> Optional[str]:
 def latest_checkpoint_round(root: Optional[str]) -> Optional[int]:
     candidates = adapter_rounds(root)
     return candidates[-1][0] if candidates else None
+
+
+def adapter_for_round(root: Optional[str], round_id: int) -> Optional[str]:
+    """Return the exact round adapter only when all required PEFT files exist."""
+    if not root:
+        return None
+    path = checkpoint_round_dir(root, round_id)
+    return path if is_lora_adapter_dir(path) else None
+
+
+def _valid_round_test_artifacts(metrics_dir: str, round_id: int) -> bool:
+    metrics_path = os.path.join(metrics_dir, f"test_eval_round_{round_id:03d}.json")
+    predictions_path = os.path.join(
+        metrics_dir, f"test_predictions_round_{round_id:03d}.jsonl")
+    try:
+        with open(metrics_path, encoding="utf-8") as f:
+            metrics = json.load(f)
+        num_examples = int(metrics.get("num_examples", 0))
+        if (
+            metrics.get("evaluation_protocol_version") != 2
+            or metrics.get("round") != round_id
+            or metrics.get("eval_split") != "test"
+            or num_examples <= 0
+        ):
+            return False
+        prediction_count = 0
+        with open(predictions_path, encoding="utf-8") as f:
+            for line in f:
+                if not line.strip():
+                    continue
+                json.loads(line)
+                prediction_count += 1
+        return prediction_count == num_examples
+    except (OSError, json.JSONDecodeError, TypeError, ValueError):
+        return False
+
+
+def completed_training_rounds(output_dir: str) -> list[int]:
+    """Return rounds committed after test evaluation and checkpoint saving.
+
+    A round is resumable only when the authoritative round stats and both
+    per-round test artifacts exist. Checkpoint directories alone are not a
+    completion marker because a process may stop during evaluation or saving.
+    """
+    metrics_dir = os.path.join(output_dir, "metrics")
+    if not os.path.isdir(metrics_dir):
+        return []
+    completed = []
+    for name in os.listdir(metrics_dir):
+        match = ROUND_METRICS_RE.match(name)
+        if not match:
+            continue
+        round_id = int(match.group(1))
+        try:
+            with open(os.path.join(metrics_dir, name), encoding="utf-8") as f:
+                stats = json.load(f)
+        except (OSError, json.JSONDecodeError, TypeError):
+            continue
+        if (
+            stats.get("round") != round_id
+            or stats.get("eval_source") != "test_generalization"
+            or stats.get("per_round_test_completed") is not True
+        ):
+            continue
+        if _valid_round_test_artifacts(metrics_dir, round_id):
+            completed.append(round_id)
+    return sorted(completed)
 
 
 def resolve_adapter_for_loading(path_or_root: Optional[str]) -> Optional[str]:

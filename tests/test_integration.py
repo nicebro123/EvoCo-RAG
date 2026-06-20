@@ -5,6 +5,7 @@ CoevolutionTrainer 在 small=None / large=None 时走纯逻辑分支，可在 CP
 """
 
 from conftest import make_audit, make_contract, make_sample
+import pytest
 
 from evoco_rag.config import EvoCoConfig
 from evoco_rag.trainers.coevolution_trainer import CoevolutionTrainer
@@ -146,3 +147,57 @@ def test_training_experience_never_exposes_gold_to_generator(tmp_path):
 
     assert large.call["show_gold"] is False
     assert large.call["candidate_counts"] == [3]
+
+
+def test_failed_round_evaluation_does_not_commit_checkpoints(tmp_path):
+    cfg = EvoCoConfig()
+    cfg.output_dir = str(tmp_path / "out")
+    cfg.models.small_lora_dir = str(tmp_path / "checkpoints" / "small")
+    cfg.models.large_lora_dir = str(tmp_path / "checkpoints" / "large")
+    cfg.ablation.use_evidence_audit = False
+
+    class SmallTrainer:
+        def __init__(self):
+            self.saved = []
+
+        def train(self, pairs):
+            return {"trained_samples": len(pairs)}
+
+        def save(self, path):
+            self.saved.append(path)
+
+    class LargeTrainer:
+        def __init__(self):
+            self.saved = []
+
+        def train_sft(self, experiences, batch_size):
+            return {"trained_samples": len(experiences)}
+
+        def save(self, path):
+            self.saved.append(path)
+
+    class FailingEvaluator:
+        def evaluate(self, round_id):
+            return {"num_examples": 1}
+
+        def evaluate_generalization(self, round_id):
+            raise RuntimeError("injected evaluation failure")
+
+    small_trainer = SmallTrainer()
+    large_trainer = LargeTrainer()
+    trainer = CoevolutionTrainer(
+        cfg,
+        small_policy=None,
+        large_auditor=None,
+        small_trainer=small_trainer,
+        large_trainer=large_trainer,
+        evaluator=FailingEvaluator(),
+    )
+
+    with pytest.raises(RuntimeError, match="injected evaluation failure"):
+        trainer.run_round([make_sample()], round_id=0)
+
+    assert small_trainer.saved == []
+    assert large_trainer.saved == []
+    assert not (tmp_path / "checkpoints" / "small" / "round_000").exists()
+    assert not (tmp_path / "checkpoints" / "large" / "round_000").exists()

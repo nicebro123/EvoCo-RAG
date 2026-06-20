@@ -24,8 +24,10 @@ from .schemas import (
     SupportLevel,
 )
 from .weights import (
+    adapter_for_round,
     adapter_rounds,
     checkpoint_round_dir,
+    completed_training_rounds,
     is_lora_adapter_dir,
     latest_checkpoint_round,
     latest_round_adapter,
@@ -49,7 +51,9 @@ __all__ = [
     "RuleVerification",
     "SupportLevel",
     "adapter_rounds",
+    "adapter_for_round",
     "checkpoint_round_dir",
+    "completed_training_rounds",
     "is_lora_adapter_dir",
     "latest_checkpoint_round",
     "latest_round_adapter",

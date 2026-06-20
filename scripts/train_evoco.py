@@ -20,9 +20,10 @@ from evoco_rag.trainers.coevolution_trainer import CoevolutionTrainer
 from evoco_rag.trainers.large_trainer import LargeTrainer
 from evoco_rag.trainers.small_trainer import SmallTrainer
 from evoco_rag.weights import (
+    adapter_for_round,
+    completed_training_rounds,
     latest_checkpoint_round,
     prepare_weight_layout,
-    resolve_adapter_for_loading,
     write_weight_manifest,
 )
 
@@ -44,6 +45,54 @@ def publish_final_round_metrics(output_dir: str, stats: list[dict]) -> int:
         os.path.join(metrics_dir, "test_predictions.jsonl"),
     )
     return final_round
+
+
+def resolve_training_state(cfg, resume: bool) -> tuple[int, str | None, str | None]:
+    """Resolve only checkpoints backed by completed per-round test artifacts."""
+    latest_small = latest_checkpoint_round(cfg.models.small_lora_dir)
+    latest_large = latest_checkpoint_round(cfg.models.large_lora_dir)
+    available_checkpoints = [r for r in (latest_small, latest_large) if r is not None]
+    completed = completed_training_rounds(cfg.output_dir)
+
+    if not resume:
+        if available_checkpoints or completed:
+            raise SystemExit(
+                "output/checkpoint roots already contain completed or partial rounds. "
+                "Use --resume to continue, or change project.output_dir / "
+                "models.*_lora_dir for a fresh run.")
+        return 0, None, None
+
+    if not completed:
+        if not available_checkpoints:
+            raise SystemExit(
+                "--resume was set, but no checkpoint or completed round was found.")
+        # Checkpoints without an authoritative round metric are from an
+        # interrupted round. Ignore them and safely replay round 0 from base.
+        return 0, None, None
+
+    last_completed = completed[-1]
+    if completed != list(range(last_completed + 1)):
+        raise SystemExit(
+            f"completed round metrics are not contiguous: {completed}")
+    start_round = last_completed + 1
+    if start_round >= cfg.training.num_rounds:
+        raise SystemExit(
+            f"resume state is already complete at round {last_completed}; "
+            f"training.num_rounds={cfg.training.num_rounds} leaves no remaining rounds.")
+
+    small_init = None
+    if cfg.ablation.train_small_lora:
+        small_init = adapter_for_round(cfg.models.small_lora_dir, last_completed)
+        if small_init is None:
+            raise SystemExit(
+                f"round {last_completed} is marked complete but its small adapter is missing.")
+    large_init = None
+    if cfg.ablation.train_large_lora:
+        large_init = adapter_for_round(cfg.models.large_lora_dir, last_completed)
+        if large_init is None:
+            raise SystemExit(
+                f"round {last_completed} is marked complete but its large adapter is missing.")
+    return start_round, small_init, large_init
 
 
 def main():
@@ -69,26 +118,7 @@ def main():
     if not test_samples:
         raise SystemExit(
             "per-round test evaluation is required, but the configured test split is empty.")
-    small_init = resolve_adapter_for_loading(cfg.models.small_lora_dir) if args.resume else None
-    large_init = resolve_adapter_for_loading(cfg.models.large_lora_dir) if args.resume else None
-    latest_small_round = latest_checkpoint_round(cfg.models.small_lora_dir)
-    latest_large_round = latest_checkpoint_round(cfg.models.large_lora_dir)
-    if not args.resume and (latest_small_round is not None or latest_large_round is not None):
-        raise SystemExit(
-            "checkpoint roots already contain round_* adapters. "
-            "Use --resume to continue, or change project.output_dir / models.*_lora_dir for a fresh run."
-        )
-    start_round = 0
-    if args.resume:
-        latest_rounds = [r for r in (latest_small_round, latest_large_round) if r is not None]
-        if not latest_rounds:
-            raise SystemExit("--resume was set, but no complete round_* LoRA adapter was found.")
-        start_round = max(latest_rounds) + 1
-        if start_round >= cfg.training.num_rounds:
-            raise SystemExit(
-                f"resume checkpoint is already at round {start_round - 1}; "
-                f"training.num_rounds={cfg.training.num_rounds} leaves no remaining rounds."
-            )
+    start_round, small_init, large_init = resolve_training_state(cfg, args.resume)
     print(f"base small model: {layout['small_base_path']}")
     print(f"base large model: {layout['large_base_path']}")
     print(f"init small LoRA: {small_init or 'fresh adapter'}")
