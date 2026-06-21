@@ -91,7 +91,9 @@ class LargeGeneratorAuditor:
             if temperature > 0:
                 gen_kwargs.update(do_sample=True, temperature=temperature, top_p=0.9)
             else:
-                gen_kwargs["do_sample"] = False
+                # Some chat models ship sampling defaults in generation_config.
+                # Clear them explicitly for greedy decoding to avoid noisy warnings.
+                gen_kwargs.update(do_sample=False, temperature=None, top_p=None)
             out = self.model.generate(
                 **inputs,
                 **gen_kwargs,
@@ -124,7 +126,9 @@ class LargeGeneratorAuditor:
                 if temperature > 0:
                     gen_kwargs.update(do_sample=True, temperature=temperature, top_p=0.9)
                 else:
-                    gen_kwargs["do_sample"] = False
+                    # Some chat models ship sampling defaults in generation_config.
+                    # Clear them explicitly for greedy decoding to avoid noisy warnings.
+                    gen_kwargs.update(do_sample=False, temperature=None, top_p=None)
                 out = self.model.generate(
                     **inputs,
                     **gen_kwargs,
