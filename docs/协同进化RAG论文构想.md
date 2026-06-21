@@ -39,7 +39,7 @@
 EvoCo-RAG 包含两个主要模型：
 
 - **小模型 \(M_s\)**：轻量级 reranker / policy model，例如 `bge-reranker-v2-m3`。负责证据选择、置信度估计、检索动作决策。
-- **大模型 \(M_l\)**：生成式大语言模型，例如 `mistralai/Mistral-Nemo-Instruct-2407`。负责基于证据生成答案，并审计证据是否真正支持答案。
+- **大模型 \(M_l\)**：生成式大语言模型，当前实验默认使用 `meta-llama/Meta-Llama-3-8B-Instruct`。负责基于证据生成答案，并审计证据是否真正支持答案。
 
 整体流程如下：
 

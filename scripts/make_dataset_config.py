@@ -170,7 +170,7 @@ def parse_args():
     parser.add_argument("--output-dir")
     parser.add_argument("--checkpoint-root")
     parser.add_argument("--small-base-path", default="../rag_assets/base_models/reranker/bge-reranker-v2-m3")
-    parser.add_argument("--large-base-path", default="../rag_assets/base_models/generator/Mistral-Nemo-Instruct-2407")
+    parser.add_argument("--large-base-path", default="../rag_assets/base_models/generator/Meta-Llama-3-8B-Instruct")
     parser.add_argument("--use-4bit", action="store_true")
     parser.add_argument("--top-k", type=int, default=3)
     parser.add_argument("--max-selected-docs", type=int, default=3)

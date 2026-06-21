@@ -37,7 +37,7 @@ first and then evaluates the same generated config on the test split:
 
 ```bash
 python scripts/launch_experiments.py \
-  --spec configs/experiments/popqa_sweep_full_2gpu.yaml
+  --spec configs/experiments/popqa_llama8b_full_sweep_2gpu.yaml
 ```
 
 Inspect the generated files under:
@@ -91,20 +91,20 @@ Launch sequentially in the current process:
 
 ```bash
 python scripts/launch_experiments.py \
-  --spec configs/experiments/popqa_sweep_full_2gpu.yaml \
+  --spec configs/experiments/popqa_llama8b_full_sweep_2gpu.yaml \
   --launch
 ```
 
 Or launch the generated per-GPU script:
 
 ```bash
-bash ../rag_assets/outputs/experiments/evoco_popqa_sweep_full_2gpu/run_gpu2_3.sh
+bash ../rag_assets/outputs/experiments/evoco_popqa_llama8b_full_sweep_2gpu_v1/run_gpu2_3.sh
 ```
 
 Start all generated GPU queues in tmux:
 
 ```bash
-bash ../rag_assets/outputs/experiments/evoco_popqa_sweep_full_2gpu/launch_tmux.sh
+bash ../rag_assets/outputs/experiments/evoco_popqa_llama8b_full_sweep_2gpu_v1/launch_tmux.sh
 ```
 
 Recommended bash entrypoint for all official experiment studies:
@@ -134,22 +134,26 @@ bash scripts/launch_all_experiments.sh
 ```
 
 This verifies the dataset pack, regenerates `configs/local/*_{fast,full}.yaml`,
-materializes every official full-data study, and starts tmux queues. With one
-GPU pair, the master queue runs the generated per-study GPU scripts
+materializes the current default full-data study, and starts tmux queues. With
+one GPU pair, the master queue runs the generated per-study GPU scripts
 sequentially. With `--gpu-pairs`, each pair gets its own sequential worker queue
-and different pairs run in parallel.
-Fast specs are kept for debugging and are not included in the default official
-queue.
+and different pairs run in parallel. Fast specs are kept for debugging and are
+not included in the default official queue.
 
 Official launcher specs:
 
 | Spec | Runs | Purpose |
 |---|---:|---|
+| `popqa_llama8b_full_sweep_2gpu.yaml` | 4 | current default PopQA Llama-3-8B full sweep: main, cost, precision, audit self-consistency |
 | `popqa_sweep_full_2gpu.yaml` | 5 | full PopQA sweep: top-k, reward, audit switches |
 | `popqa_hparam_full_2gpu.yaml` | 10 | full PopQA hyperparameter search for top-k, audit count, confidence thresholds, context length |
 | `multidataset_full_2gpu.yaml` | 5 | full generalization check across converted datasets |
 | `popqa_full_sweep_2gpu.yaml` | 4 | selected full PopQA settings for final cost/accuracy comparison |
 | `popqa_ablation_full_2gpu.yaml` | 8 | full PopQA mechanism ablations for the main paper table |
+
+`popqa_llama8b_full_sweep_2gpu.yaml` is the default launched by `run.sh train`
+and `scripts/launch_all_experiments.sh`. The other specs are retained as
+legacy or optional comparison studies and can be selected with `--spec`.
 
 Single-study bash entrypoint:
 
@@ -173,7 +177,7 @@ Equivalent Python entrypoint:
 
 ```bash
 python scripts/launch_experiments.py \
-  --spec configs/experiments/popqa_sweep_full_2gpu.yaml \
+  --spec configs/experiments/popqa_llama8b_full_sweep_2gpu.yaml \
   --launch-tmux
 ```
 
@@ -213,8 +217,8 @@ experiments:
 
 The standalone full PopQA settings are also represented by launcher specs:
 `popqa_full_sweep_2gpu.yaml` for selected hyperparameter settings and
-`popqa_ablation_full_2gpu.yaml` for mechanism ablations. Both are included in
-`scripts/launch_all_experiments.sh`.
+`popqa_ablation_full_2gpu.yaml` for mechanism ablations. They are retained for
+explicit comparison runs.
 
 When creating a new experiment, copy one YAML and change all three roots:
 

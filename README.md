@@ -101,26 +101,35 @@ hf download BAAI/bge-reranker-v2-m3 \
   --local-dir ../rag_assets/base_models/reranker/bge-reranker-v2-m3
 ```
 
-Download the large generator / auditor:
+Download the default large generator / auditor. The current public default is
+Meta Llama 3 8B Instruct. This is a gated Hugging Face model, so first make
+sure your Hugging Face account has accepted the model license, then login on
+the server:
 
 ```bash
-hf download mistralai/Mistral-Nemo-Instruct-2407 \
-  --local-dir ../rag_assets/base_models/generator/Mistral-Nemo-Instruct-2407
+hf auth login
+
+hf download meta-llama/Meta-Llama-3-8B-Instruct \
+  --local-dir ../rag_assets/base_models/generator/Meta-Llama-3-8B-Instruct \
+  --exclude 'original/*'
 ```
 
 The expected paths are:
 
 ```text
 ../rag_assets/base_models/reranker/bge-reranker-v2-m3
-../rag_assets/base_models/generator/Mistral-Nemo-Instruct-2407
+../rag_assets/base_models/generator/Meta-Llama-3-8B-Instruct
 ```
 
 Verify:
 
 ```bash
 test -d ../rag_assets/base_models/reranker/bge-reranker-v2-m3 && echo "reranker OK"
-test -d ../rag_assets/base_models/generator/Mistral-Nemo-Instruct-2407 && echo "generator OK"
+test -d ../rag_assets/base_models/generator/Meta-Llama-3-8B-Instruct && echo "generator OK"
 ```
+
+Legacy Mistral-Nemo configs are still kept for historical comparison, but new
+local configs and the current PopQA full sweep use the Llama-3-8B path above.
 
 ---
 
@@ -332,10 +341,11 @@ The command writes JSON and CSV files under
 `../rag_assets/outputs/experiments/summary_v2/`. Incomplete runs and old
 protocol results remain visible in the summary but are excluded from ranking.
 
-The official queue uses full datasets and runs PopQA sweeps, PopQA
-hyperparameter studies, multi-dataset checks, and mechanism ablations. Detailed
-study specs live in `configs/experiments/`. A short official experiment matrix
-is available at [docs/官方全量实验说明.md](docs/官方全量实验说明.md).
+The current default full-data study uses Llama-3-8B-Instruct on PopQA. Legacy
+Mistral-Nemo sweeps, multi-dataset checks, and mechanism ablations are still
+available as explicit launcher specs under `configs/experiments/`. A short
+experiment matrix is available at
+[docs/官方全量实验说明.md](docs/官方全量实验说明.md).
 
 ---
 
@@ -419,5 +429,6 @@ supports the answer.
 ## References
 
 - BGE reranker: [BAAI/bge-reranker-v2-m3](https://huggingface.co/BAAI/bge-reranker-v2-m3)
-- Generator: [mistralai/Mistral-Nemo-Instruct-2407](https://huggingface.co/mistralai/Mistral-Nemo-Instruct-2407)
+- Default generator / auditor: [meta-llama/Meta-Llama-3-8B-Instruct](https://huggingface.co/meta-llama/Meta-Llama-3-8B-Instruct)
+- Legacy generator config: [mistralai/Mistral-Nemo-Instruct-2407](https://huggingface.co/mistralai/Mistral-Nemo-Instruct-2407)
 - Hugging Face download guide: [huggingface_hub download](https://huggingface.co/docs/huggingface_hub/en/guides/download)

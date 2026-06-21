@@ -1,6 +1,6 @@
 """大模型 generator + auditor（开发文档 §5.5）。
 
-封装 mistralai/Mistral-Nemo-Instruct-2407：基于证据合约生成答案并审计，输出 LargeAudit。
+默认封装 meta-llama/Meta-Llama-3-8B-Instruct：基于证据合约生成答案并审计，输出 LargeAudit。
 默认 bf16（与 run_train.py 对齐，H20 显存充足）；use_4bit=True 时走 nf4 量化。
 JSON 解析失败最多重试 json_retry 次，仍失败则给 fallback audit、json_valid=False。
 torch / transformers / peft 延迟导入。

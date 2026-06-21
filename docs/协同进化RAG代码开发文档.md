@@ -62,8 +62,8 @@ replay buffer 保存结构化经验
 
 ```text
 小模型 base: ../rag_assets/base_models/reranker/bge-reranker-v2-m3
-大模型 base: ../rag_assets/base_models/generator/Mistral-Nemo-Instruct-2407
-大模型来源: mistralai/Mistral-Nemo-Instruct-2407（12B instruct generator）
+大模型 base: ../rag_assets/base_models/generator/Meta-Llama-3-8B-Instruct
+大模型来源: meta-llama/Meta-Llama-3-8B-Instruct（8B instruct generator / auditor）
 ```
 
 当前工程已按代码和资产分离。`CoRAG-D63F ` 只保留源码、配置、测试和文档，后续可作为 GitHub 仓库；数据、旧 adapter、base model、checkpoint 和输出统一放在同级 `../rag_assets/`，不进入代码仓库。
@@ -397,7 +397,7 @@ top1/top2 分数接近且实体不同 → ask_auditor
 
 职责：
 
-- 加载 `mistralai/Mistral-Nemo-Instruct-2407`。
+- 默认加载 `meta-llama/Meta-Llama-3-8B-Instruct`。
 - 加载或初始化 LoRA。
 - 批量生成。
 - 支持 train mode 和 eval mode。
@@ -803,11 +803,12 @@ train_large_lora: true
 | evoco_large_only | 只训练大模型 LoRA |
 | evoco_full | 完整方案 |
 
-当前 PopQAStandard 官方实验已拆成 full-data launcher spec；fast spec 只保留作调试：
+当前 PopQAStandard 默认官方实验已切到 Llama-3-8B full-data launcher spec；fast spec 只保留作调试：
 
-- `configs/experiments/popqa_sweep_full_2gpu.yaml`：full PopQA top-k、reward、audit 开关 sweep。
-- `configs/experiments/popqa_hparam_full_2gpu.yaml`：full PopQA 超参探索，用于筛 top-k、audit candidates、置信阈值和上下文长度。
-- `configs/experiments/popqa_ablation_full_2gpu.yaml`：full 3-round 机制消融，用于论文主表，包括 `evoco_full`、`answer_only_reward`、`no_audit`、`no_action_policy`、`no_policy_heads`、`small_only`、`large_only`、`baseline_current_corag`。
+- `configs/experiments/popqa_llama8b_full_sweep_2gpu.yaml`：当前默认 full PopQA Llama-3-8B sweep，包括 main、cost、precision 和 audit self-consistency 设置。
+- `configs/experiments/popqa_sweep_full_2gpu.yaml`：legacy Mistral-Nemo full PopQA top-k、reward、audit 开关 sweep。
+- `configs/experiments/popqa_hparam_full_2gpu.yaml`：legacy Mistral-Nemo full PopQA 超参探索，用于筛 top-k、audit candidates、置信阈值和上下文长度。
+- `configs/experiments/popqa_ablation_full_2gpu.yaml`：legacy full 3-round 机制消融，用于论文主表，包括 `evoco_full`、`answer_only_reward`、`no_audit`、`no_action_policy`、`no_policy_heads`、`small_only`、`large_only`、`baseline_current_corag`。
 
 ## 8. 配置设计
 
@@ -827,7 +828,7 @@ data:
 
 models:
   small_base_path: ../rag_assets/base_models/reranker/bge-reranker-v2-m3
-  large_base_path: ../rag_assets/base_models/generator/Mistral-Nemo-Instruct-2407
+  large_base_path: ../rag_assets/base_models/generator/Meta-Llama-3-8B-Instruct
   small_lora_dir: ../rag_assets/checkpoints/evoco_popqa/small
   large_lora_dir: ../rag_assets/checkpoints/evoco_popqa/large
 
@@ -914,7 +915,7 @@ CUDA_VISIBLE_DEVICES=2,3 python scripts/train_evoco.py --config configs/evoco_po
 | 类型 | 目录 | 说明 |
 |---|---|---|
 | 小模型 base | `../rag_assets/base_models/reranker/bge-reranker-v2-m3` | 不放在代码仓库里，训练时只读取，不覆盖 |
-| 大模型 base | `../rag_assets/base_models/generator/Mistral-Nemo-Instruct-2407` | 不放在代码仓库里，训练时只读取，不覆盖 |
+| 大模型 base | `../rag_assets/base_models/generator/Meta-Llama-3-8B-Instruct` | 不放在代码仓库里，训练时只读取，不覆盖 |
 | 旧版小模型 adapter | `../rag_assets/adapters/reranker-CoRAG` | 当前压缩包自带 LoRA，可作为已有结果或迁移参考 |
 | 旧版大模型 adapter | `../rag_assets/adapters/generator-CoRAG` | 当前压缩包自带 LoRA，可作为已有结果或迁移参考 |
 | EvoCo 小模型 checkpoint | `../rag_assets/checkpoints/evoco_popqa/small/round_000` | 新方案每轮保存的小模型 LoRA |

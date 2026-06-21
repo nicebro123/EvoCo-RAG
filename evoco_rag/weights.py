@@ -4,7 +4,7 @@ The project keeps immutable base model weights outside this repo, while EvoCo-RA
 checkpoints are saved under the configured output directory:
 
     small base model: ../rag_assets/base_models/reranker/bge-reranker-v2-m3
-    large base model: ../rag_assets/base_models/generator/Mistral-Nemo-Instruct-2407
+    large base model: ../rag_assets/base_models/generator/Meta-Llama-3-8B-Instruct
     small LoRA rounds: ../rag_assets/checkpoints/evoco_popqa/small/round_000
     large LoRA rounds: ../rag_assets/checkpoints/evoco_popqa/large/round_000
 

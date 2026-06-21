@@ -55,7 +55,7 @@ class SmallPolicyConfig:
 @dataclass
 class ModelsConfig:
     small_base_path: str = "../rag_assets/base_models/reranker/bge-reranker-v2-m3"
-    large_base_path: str = "../rag_assets/base_models/generator/Mistral-Nemo-Instruct-2407"
+    large_base_path: str = "../rag_assets/base_models/generator/Meta-Llama-3-8B-Instruct"
     small_lora_dir: str = "../rag_assets/checkpoints/evoco_popqa/small"
     large_lora_dir: str = "../rag_assets/checkpoints/evoco_popqa/large"
     use_4bit: bool = False

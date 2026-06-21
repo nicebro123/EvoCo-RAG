@@ -681,15 +681,16 @@ def test_official_popqa_experiment_specs_cover_main_studies():
     assert {"action_conf_035_top5", "action_conf_055_top5"}.issubset(hparam_names)
 
     launch_all = Path("scripts/launch_all_experiments.sh").read_text(encoding="utf-8")
-    official_specs = {
+    assert "configs/experiments/popqa_llama8b_full_sweep_2gpu.yaml" in launch_all
+    legacy_specs = {
         "popqa_sweep_full_2gpu.yaml",
         "popqa_hparam_full_2gpu.yaml",
         "multidataset_full_2gpu.yaml",
         "popqa_full_sweep_2gpu.yaml",
         "popqa_ablation_full_2gpu.yaml",
     }
-    for spec_name in official_specs:
-        assert f"configs/experiments/{spec_name}" in launch_all
+    for spec_name in legacy_specs:
+        assert spec_name not in launch_all
     assert "configs/experiments/popqa_fast_sweep_2gpu.yaml" not in launch_all
     assert "configs/experiments/popqa_hparam_fast_2gpu.yaml" not in launch_all
     assert "configs/experiments/multidataset_fast_2gpu.yaml" not in launch_all
