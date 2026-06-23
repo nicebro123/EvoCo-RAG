@@ -67,8 +67,7 @@ class _StubLarge:
 def test_generalization_path_runs_with_stub_models(tmp_path):
     cfg = EvoCoConfig()
     cfg.output_dir = str(tmp_path / "out")
-    cfg.contract.top_k = 1
-    cfg.contract.eval_top_k = 2
+    cfg.contract.top_k = 2
     cfg.contract.max_selected_docs = 2
     ev = Evaluator(cfg, small_policy=_StubSmall(), large_auditor=_StubLarge(),
                    test_samples=[make_sample(), make_sample()])
@@ -85,7 +84,6 @@ def test_generalization_path_runs_with_stub_models(tmp_path):
     assert sum(1 for _ in open(predictions, encoding="utf-8")) == 2
     with open(predictions, encoding="utf-8") as f:
         first = json.loads(next(f))
-    assert len(first["contract"]["candidate_docs"]) == 2
     assert first["training_targets"]["evaluation_only"] is True
     assert first["training_targets"]["large_sft_target"] is None
 
@@ -101,34 +99,6 @@ def test_round_eval_requires_generalization_inputs(tmp_path):
     trainer = CoevolutionTrainer(cfg, None, None, evaluator=evaluator)
     with pytest.raises(RuntimeError, match="per-round test evaluation requires"):
         trainer.run_round([make_sample()], round_id=0)
-
-
-def test_training_uses_train_top_k(tmp_path):
-    cfg = EvoCoConfig()
-    cfg.output_dir = str(tmp_path / "out")
-    cfg.contract.top_k = 5
-    cfg.contract.train_top_k = 1
-    cfg.contract.eval_top_k = 3
-    cfg.contract.max_selected_docs = 3
-    cfg.ablation.train_small_lora = False
-    cfg.ablation.train_large_lora = False
-
-    trainer = CoevolutionTrainer(
-        cfg,
-        _StubSmall(),
-        _StubLarge(),
-        evaluator=Evaluator(
-            cfg,
-            small_policy=_StubSmall(),
-            large_auditor=_StubLarge(),
-            test_samples=[make_sample()],
-        ),
-    )
-    trainer.run_round([make_sample()], round_id=0)
-
-    replay = Path(cfg.output_dir) / "replay" / "round_000.jsonl"
-    record = json.loads(replay.read_text(encoding="utf-8").splitlines()[0])
-    assert len(record["contract"]["candidate_docs"]) == 1
 
 
 def test_every_round_writes_test_metrics_and_predictions(tmp_path):

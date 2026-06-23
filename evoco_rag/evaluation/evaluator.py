@@ -95,10 +95,9 @@ class Evaluator:
 
         samples = list(test_samples)
         contracts = []
-        top_k = self.cfg.contract.eval_k
         for sample in samples:
             contract = self.small.build_contract(
-                sample, round_id=round_id, top_k=top_k,
+                sample, round_id=round_id, top_k=self.cfg.contract.top_k,
                 high_conf_threshold=self.cfg.contract.high_conf_threshold,
                 answer_now_margin=self.cfg.contract.answer_now_margin,
                 max_selected_docs=self.cfg.contract.max_selected_docs,

@@ -23,14 +23,14 @@ def _make_run(root: Path, study: str, run_name: str, protocol: int | None, accur
 
 def test_summary_filters_protocol_and_ranks_complete_runs(tmp_path):
     root = tmp_path / "experiments"
-    study_dir = root / "study_v3"
+    study_dir = root / "study_v2"
     study_dir.mkdir(parents=True)
-    good = _make_run(root, "study_v3", "good", 3, 80.0)
-    better = _make_run(root, "study_v3", "better", 3, 90.0)
-    old = _make_run(root, "study_v3", "old", 2, 99.0)
-    missing = root / "study_v3" / "missing"
+    good = _make_run(root, "study_v2", "good", 2, 80.0)
+    better = _make_run(root, "study_v2", "better", 2, 90.0)
+    old = _make_run(root, "study_v2", "old", 1, 99.0)
+    missing = root / "study_v2" / "missing"
     manifest = {
-        "evaluation_protocol_version": 3,
+        "evaluation_protocol_version": 2,
         "runs": [
             {"index": 0, "name": "good", "gpu": "0,1", "run_dir": str(good)},
             {"index": 1, "name": "better", "gpu": "2,3", "run_dir": str(better)},
@@ -42,7 +42,7 @@ def test_summary_filters_protocol_and_ranks_complete_runs(tmp_path):
         yaml.safe_dump(manifest), encoding="utf-8")
 
     rows = collect_results(root)
-    paths = write_summary(root / "summary_v3", rows)
+    paths = write_summary(root / "summary_v2", rows)
 
     assert [row["status"] for row in rows] == [
         "complete", "complete", "protocol_mismatch", "incomplete"

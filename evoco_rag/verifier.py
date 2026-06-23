@@ -7,7 +7,7 @@
 from __future__ import annotations
 
 from .schemas import LargeAudit, RagSample, EvidenceContract, RuleVerification, SupportLevel
-from .text_utils import answer_contains_any_gold
+from .text_utils import exact_presence
 
 
 def _doc_text(sample: RagSample, doc_id: int) -> str:
@@ -27,7 +27,7 @@ def _quote_supports_answer(sample: RagSample, evidence: dict) -> bool:
     if not quote:
         return False
     document = _doc_text(sample, doc_id)
-    return quote.lower() in document.lower() and answer_contains_any_gold(sample.answers, quote)
+    return quote.lower() in document.lower() and exact_presence(sample.answers, quote)
 
 
 def verify(
@@ -41,8 +41,7 @@ def verify(
     """对单条样本做规则验证。
 
     规则（开发文档 §4.4 第一版）：
-      1. answer_match: final_answer 是否包含任一 gold answer（CoRAG-style
-         answer containment）。
+      1. answer_match: gold answer 是否出现在 final_answer 中（exact_presence）。
       2. cited_doc_contains_answer: gold answer 是否出现在 used_doc_ids 对应原文中。
       3. used_doc_in_selected_evidence: 大模型引用文档是否来自小模型合约候选。
       4. support_rule_passed: 答案命中且引用文档确含答案依据（规则级"支持"，
@@ -51,11 +50,11 @@ def verify(
     """
     notes: list[str] = []
 
-    answer_match = answer_contains_any_gold(sample.answers, audit.final_answer)
+    answer_match = exact_presence(sample.answers, audit.final_answer)
 
     cited_doc_contains_answer = False
     for doc_id in audit.used_doc_ids:
-        if answer_contains_any_gold(sample.answers, _doc_text(sample, doc_id)):
+        if exact_presence(sample.answers, _doc_text(sample, doc_id)):
             cited_doc_contains_answer = True
             break
 
@@ -79,7 +78,7 @@ def verify(
     # 规则级"证据支持"独立于答案对错：小模型选中的证据里是否真的包含 gold answer。
     # 这是判定检索/重排是否成功、能否给小模型正反馈的依据（开发文档 §5.8 四象限）。
     support_rule_passed = any(
-        answer_contains_any_gold(sample.answers, _doc_text(sample, did))
+        exact_presence(sample.answers, _doc_text(sample, did))
         for did in contract.selected_doc_ids()
     )
 

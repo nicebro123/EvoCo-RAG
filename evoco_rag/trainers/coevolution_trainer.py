@@ -134,10 +134,9 @@ class CoevolutionTrainer:
 
     def _build_contract_for_sample(self, sample, round_id: int):
         cfg = self.cfg
-        top_k = cfg.contract.train_k
         if self.small is not None:
             contract = self.small.build_contract(
-                sample, round_id=round_id, top_k=top_k,
+                sample, round_id=round_id, top_k=cfg.contract.top_k,
                 high_conf_threshold=cfg.contract.high_conf_threshold,
                 answer_now_margin=cfg.contract.answer_now_margin,
                 max_selected_docs=cfg.contract.max_selected_docs,
@@ -148,7 +147,7 @@ class CoevolutionTrainer:
             ranked = [{"doc_id": d["doc_id"], "score": -i}
                       for i, d in enumerate(sample.documents)]
             contract = build_contract(sample, ranked, round_id=round_id,
-                                      top_k=top_k,
+                                      top_k=cfg.contract.top_k,
                                       high_conf_threshold=cfg.contract.high_conf_threshold,
                                       answer_now_margin=cfg.contract.answer_now_margin,
                                       max_selected_docs=cfg.contract.max_selected_docs,

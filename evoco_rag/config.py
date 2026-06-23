@@ -16,23 +16,11 @@ from .rewards import RewardWeights
 @dataclass
 class ContractConfig:
     top_k: int = 5
-    # Backward-compatible default used when train_top_k/eval_top_k are not set.
-    # CoRAG-style PopQA runs should set train_top_k=1 and eval_top_k=3.
-    train_top_k: int | None = None
-    eval_top_k: int | None = None
     high_conf_threshold: float = 0.75
     answer_now_margin: float = 0.15
     max_selected_docs: int = 5
     action_mode: str = "heuristic"  # heuristic | policy | hybrid
     policy_action_min_conf: float = 0.45
-
-    @property
-    def train_k(self) -> int:
-        return int(self.train_top_k if self.train_top_k is not None else self.top_k)
-
-    @property
-    def eval_k(self) -> int:
-        return int(self.eval_top_k if self.eval_top_k is not None else self.top_k)
 
 
 @dataclass

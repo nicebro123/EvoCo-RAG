@@ -101,7 +101,7 @@ def test_launch_experiments_dry_run_materializes_configs(tmp_path):
     assert second["contract"]["top_k"] == 5
     assert second["runtime"]["audit_batch_size"] == 2
     assert len(manifest["runs"]) == 2
-    assert manifest["evaluation_protocol_version"] == 3
+    assert manifest["evaluation_protocol_version"] == 2
     assert manifest["runs"][0]["eval_after_train"] is True
     assert manifest["runs"][0]["eval_log_path"].endswith("eval.log")
     assert manifest["runs"][0]["train_marker_path"].endswith("metrics/round_000.json")

@@ -11,7 +11,7 @@ from typing import Iterable
 
 import numpy as np
 
-from ..text_utils import answer_contains_any_gold
+from ..text_utils import exact_presence
 
 
 def _mean(xs):
@@ -28,7 +28,7 @@ def _doc_text(documents, doc_id):
 
 def _relevant_ids(documents, answers):
     return {d.get("doc_id") for d in documents
-            if answer_contains_any_gold(answers, d.get("text") or d.get("raw") or "")}
+            if exact_presence(answers, d.get("text") or d.get("raw") or "")}
 
 
 def compute_metrics(experiences: Iterable) -> dict:
@@ -87,10 +87,7 @@ def compute_metrics(experiences: Iterable) -> dict:
         # 证据/引用：used_doc_precision = 引用文档中真正含答案的比例
         used = a.get("used_doc_ids", []) or []
         if used:
-            prec = _mean([
-                1.0 if answer_contains_any_gold(answers, _doc_text(docs, u)) else 0.0
-                for u in used
-            ])
+            prec = _mean([1.0 if exact_presence(answers, _doc_text(docs, u)) else 0.0 for u in used])
             used_precisions.append(prec)
 
         # 成本
@@ -138,8 +135,7 @@ def compute_metrics(experiences: Iterable) -> dict:
     num_correct = sum(answer_match)
 
     metrics = {
-        "evaluation_protocol_version": 3,
-        "answer_match_protocol": "corag_style_answer_contains_gold",
+        "evaluation_protocol_version": 2,
         "num_examples": num,
         # 答案
         "accuracy": 100.0 * _mean(answer_match),

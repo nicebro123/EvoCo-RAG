@@ -19,12 +19,10 @@ defaults:
   seed: 42
 
 experiments:
-  - name: main_policy_corag_k1_eval3
+  - name: main_policy_top5
     overrides:
-      contract.top_k: 3
-      contract.train_top_k: 1
-      contract.eval_top_k: 3
-      contract.max_selected_docs: 3
+      contract.top_k: 5
+      contract.max_selected_docs: 5
       runtime.candidate_doc_char_limit: 1200
       runtime.num_audit_candidates: 3
       runtime.audit_batch_size: 2
@@ -40,8 +38,6 @@ experiments:
   - name: precision_top8
     overrides:
       contract.top_k: 8
-      contract.train_top_k: 8
-      contract.eval_top_k: 8
       contract.max_selected_docs: 8
       runtime.candidate_doc_char_limit: 1600
       runtime.num_audit_candidates: 3
@@ -55,10 +51,8 @@ experiments:
 
   - name: audit_self_consistency
     overrides:
-      contract.top_k: 3
-      contract.train_top_k: 1
-      contract.eval_top_k: 3
-      contract.max_selected_docs: 3
+      contract.top_k: 5
+      contract.max_selected_docs: 5
       runtime.candidate_doc_char_limit: 1200
       runtime.num_audit_candidates: 5
       runtime.audit_batch_size: 2
