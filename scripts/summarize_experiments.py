@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Aggregate protocol-v2 experiment metrics into JSON/CSV tables."""
+"""Aggregate experiment metrics into JSON/CSV tables."""
 
 from __future__ import annotations
 
@@ -13,7 +13,7 @@ import yaml
 
 
 DEFAULT_ROOT = "../rag_assets/outputs/experiments"
-DEFAULT_PROTOCOL_VERSION = 2
+DEFAULT_PROTOCOL_VERSION = 3
 SCALAR_METRICS = (
     "accuracy",
     "recall_at_k",

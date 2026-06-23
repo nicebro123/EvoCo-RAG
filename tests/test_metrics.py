@@ -34,10 +34,11 @@ def test_metrics_keys_and_accuracy():
                 "audit_schema_valid_rate", "audit_parse_status_distribution",
                 "audit_schema_error_distribution",
                 "avg_action_cost_penalty", "avg_total_cost_penalty",
-                "accuracy_cost_pareto_point"):
+                "accuracy_cost_pareto_point", "answer_match_protocol"):
         assert key in m
     assert m["num_examples"] == 2
-    assert m["evaluation_protocol_version"] == 2
+    assert m["evaluation_protocol_version"] == 3
+    assert m["answer_match_protocol"] == "corag_style_answer_contains_gold"
     assert m["accuracy"] == 50.0  # 一对一错
     assert "avg_total_cost_penalty" in m["accuracy_cost_pareto_point"]
 

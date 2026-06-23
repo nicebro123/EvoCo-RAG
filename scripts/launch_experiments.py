@@ -35,7 +35,7 @@ from evoco_rag.config import EvoCoConfig
 
 DEFAULT_TRAIN_SCRIPT = "scripts/train_evoco.py"
 DEFAULT_EVAL_SCRIPT = "scripts/eval_evoco.py"
-EVALUATION_PROTOCOL_VERSION = 2
+EVALUATION_PROTOCOL_VERSION = 3
 
 
 def read_yaml(path: Path) -> dict[str, Any]:

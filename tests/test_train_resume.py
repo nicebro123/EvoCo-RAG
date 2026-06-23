@@ -27,7 +27,7 @@ def _completed_round(output_dir: Path, round_id: int) -> None:
         json.dumps(stats), encoding="utf-8")
     (metrics / f"test_eval_round_{round_id:03d}.json").write_text(
         json.dumps({
-            "evaluation_protocol_version": 2,
+            "evaluation_protocol_version": 3,
             "round": round_id,
             "eval_split": "test",
             "num_examples": 1,

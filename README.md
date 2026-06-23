@@ -329,7 +329,7 @@ last round is also published as `test_eval.json` and `test_predictions.jsonl`;
 the launcher reuses these files instead of running the same final evaluation
 twice.
 
-After the queue finishes, aggregate all protocol-v2 runs into one summary and
+After the queue finishes, aggregate all protocol-v3 runs into one summary and
 accuracy/cost ranking table:
 
 ```bash
@@ -338,7 +338,7 @@ python scripts/summarize_experiments.py \
 ```
 
 The command writes JSON and CSV files under
-`../rag_assets/outputs/experiments/summary_v2/`. Incomplete runs and old
+`../rag_assets/outputs/experiments/summary_v3/`. Incomplete runs and old
 protocol results remain visible in the summary but are excluded from ranking.
 
 The current default full-data study uses Llama-3-8B-Instruct on PopQA. Legacy

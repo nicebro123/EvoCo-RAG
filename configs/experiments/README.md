@@ -59,7 +59,7 @@ Inspect the generated files under:
         └── test_eval.json
 ```
 
-Official full studies use evaluation protocol v2 and `_v2` study directories.
+Official full studies use evaluation protocol v3 and `_v2` study directories.
 Protocol v2 removes gold answers from all generation prompts, validates required
 audit fields, records actual candidate counts, and saves per-example test
 predictions. Old protocol-v1 outputs are intentionally not reused.
@@ -77,7 +77,7 @@ If the final training marker already exists but `metrics/test_eval.json` is
 missing, the launcher runs evaluation only instead of retraining into existing
 checkpoints.
 
-Aggregate completed protocol-v2 runs after the queue finishes:
+Aggregate completed protocol-v3 runs after the queue finishes:
 
 ```bash
 python scripts/summarize_experiments.py \
@@ -85,7 +85,7 @@ python scripts/summarize_experiments.py \
 ```
 
 The summary keeps incomplete and protocol-mismatched runs for diagnosis, while
-`summary_v2/experiment_ranking.csv` contains only complete protocol-v2 runs.
+`summary_v3/experiment_ranking.csv` contains only complete protocol-v3 runs.
 
 Launch sequentially in the current process:
 
