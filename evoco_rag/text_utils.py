@@ -31,14 +31,24 @@ def normalize_answer(s: str) -> str:
     return white_space_fix(remove_articles(remove_punc(lower(s))))
 
 
-def exact_presence(answers: list[str], context: str) -> bool:
-    """任一标准答案（归一化后）作为子串出现在 context 中即视为命中。"""
+def answer_contains_any_gold(answers: list[str], context: str) -> bool:
+    """CoRAG-style answer containment.
+
+    A prediction is correct when its normalized output contains any normalized
+    gold answer as a substring. This follows the PopQA-style "ground-truth
+    response included in generated output" protocol used by CoRAG/InstructRAG.
+    """
     norm_context = normalize_answer(context)
     for ans in answers:
         normalized = normalize_answer(ans)
         if normalized and normalized in norm_context:
             return True
     return False
+
+
+def exact_presence(answers: list[str], context: str) -> bool:
+    """Backward-compatible alias for CoRAG-style answer containment."""
+    return answer_contains_any_gold(answers, context)
 
 
 _SENT_SPLIT = re.compile(r"(?<=[.!?])\s+")

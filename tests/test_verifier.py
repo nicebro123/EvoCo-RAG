@@ -11,6 +11,17 @@ def test_answer_match_hits_answers():
     assert v.answer_match is True
 
 
+def test_answer_match_uses_corag_style_containment():
+    sample = make_sample()
+    contract = make_contract(selected_doc_ids=[0])
+    audit = make_audit(
+        final_answer="The occupation is English Conservative Party politician.",
+        used_doc_ids=[0],
+    )
+    v = verify(sample, contract, audit)
+    assert v.answer_match is True
+
+
 def test_cited_doc_contains_answer():
     sample = make_sample()
     contract = make_contract(selected_doc_ids=[0])
