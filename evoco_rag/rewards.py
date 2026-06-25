@@ -67,6 +67,54 @@ def _predicted_confidence_bucket(contract: EvidenceContract) -> str:
     return "medium"
 
 
+def _can_retrieve_more(sample: RagSample, contract: EvidenceContract) -> bool:
+    current_window = max(
+        len(contract.candidate_docs),
+        int(contract.cost.get("num_selected_docs", 0) or 0),
+    )
+    return len(sample.documents) > current_window
+
+
+def _contract_difficulty_signal(contract: EvidenceContract) -> bool:
+    uncertainty = contract.uncertainty or {}
+    if contract.answerability != Answerability.HIGH:
+        return True
+    if uncertainty.get("entity_ambiguity") or uncertainty.get("evidence_conflict"):
+        return True
+    confidences = [e.relevance_confidence for e in contract.selected_evidence]
+    if len(confidences) >= 2 and abs(confidences[0] - confidences[1]) < 0.08:
+        return True
+    if confidences and max(confidences) < 0.75:
+        return True
+    return False
+
+
+def _small_action_target(
+    sample: RagSample,
+    contract: EvidenceContract,
+    answer_match: bool,
+    support: bool,
+) -> str:
+    """Difficulty-aware action supervision for the small policy head.
+
+    Prefer executable actions. ``retrieve_more`` is only a target when the
+    sample actually has documents outside the current candidate window. When
+    retrieval cannot expand, unsupported or difficult examples become
+    ``ask_auditor`` targets instead of teaching a no-op action.
+    """
+    can_retrieve = _can_retrieve_more(sample, contract)
+    difficult = _contract_difficulty_signal(contract)
+    if support and answer_match and not difficult:
+        return RetrievalAction.ANSWER_NOW
+    if not support and can_retrieve:
+        return RetrievalAction.RETRIEVE_MORE
+    if not support:
+        return RetrievalAction.ASK_AUDITOR
+    if not answer_match:
+        return RetrievalAction.ASK_AUDITOR
+    return RetrievalAction.ASK_AUDITOR if difficult else RetrievalAction.ANSWER_NOW
+
+
 def compute_decomposed_reward(
     sample: RagSample,
     contract: EvidenceContract,
@@ -243,15 +291,9 @@ def build_training_targets(
             failure_type = FailureType.UNSUPPORTED_ANSWER
             do_not_reward_retriever_reason = "parametric_answer_without_support"
 
-    # 小模型动作 target
-    if support and answer_match:
-        small_action_target = RetrievalAction.ANSWER_NOW
-    elif not support:
-        small_action_target = RetrievalAction.RETRIEVE_MORE
-    else:
-        # Evidence is sufficient but generation failed: ask for additional
-        # generation/audit candidates rather than trusting the failed audit.
-        small_action_target = RetrievalAction.ASK_AUDITOR
+    # 小模型动作 target：用可执行动作 + 困难感知信号，避免把 no-op 的
+    # retrieve_more 或纯后验的 generator failure 当作唯一监督。
+    small_action_target = _small_action_target(sample, contract, answer_match, support)
 
     # 大模型学习由规则验证过的证据监督目标，而不是复制自己的审计输出。
     # 这同时为“检索正确、生成错误”的样本提供明确纠错信号。

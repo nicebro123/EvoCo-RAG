@@ -50,6 +50,10 @@ class SmallPolicyConfig:
     evidence_loss_weight: float = 1.0
     action_loss_weight: float = 0.5
     calibration_loss_weight: float = 0.2
+    answer_now_action_weight: float = 1.0
+    retrieve_more_action_weight: float = 1.3
+    rewrite_query_action_weight: float = 1.0
+    ask_auditor_action_weight: float = 2.0
 
 
 @dataclass

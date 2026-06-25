@@ -11,10 +11,21 @@ def _ranked():
     return [{"doc_id": 0, "score": 5.0}, {"doc_id": 1, "score": 4.9}]
 
 
+def _sample_with_extra_doc():
+    sample = make_sample()
+    sample.documents.append({"doc_id": 2, "title": "d2", "text": "other", "raw": "other"})
+    return sample
+
+
+def _ranked_with_extra_doc():
+    return _ranked() + [{"doc_id": 2, "score": 1.0}]
+
+
 def test_policy_action_mode_overrides_heuristic_action():
     contract = build_contract(
-        make_sample(),
-        _ranked(),
+        _sample_with_extra_doc(),
+        _ranked_with_extra_doc(),
+        top_k=2,
         action_mode="policy",
         policy_action=RetrievalAction.RETRIEVE_MORE,
         policy_action_confidence=0.2,
@@ -25,16 +36,18 @@ def test_policy_action_mode_overrides_heuristic_action():
 
 def test_hybrid_action_mode_requires_policy_confidence():
     low = build_contract(
-        make_sample(),
-        _ranked(),
+        _sample_with_extra_doc(),
+        _ranked_with_extra_doc(),
+        top_k=2,
         action_mode="hybrid",
         policy_action=RetrievalAction.RETRIEVE_MORE,
         policy_action_confidence=0.2,
         policy_action_min_conf=0.8,
     )
     high = build_contract(
-        make_sample(),
-        _ranked(),
+        _sample_with_extra_doc(),
+        _ranked_with_extra_doc(),
+        top_k=2,
         action_mode="hybrid",
         policy_action=RetrievalAction.RETRIEVE_MORE,
         policy_action_confidence=0.9,
@@ -93,3 +106,34 @@ def test_retrieve_more_expands_candidate_pool_in_same_round():
     assert len(contract.selected_evidence) == 2
     assert contract.cost["num_retrieval_rounds"] == 2
     assert contract.uncertainty["retrieval_expanded"] is True
+
+
+def test_retrieve_more_is_masked_when_no_extra_documents():
+    sample = make_sample()
+    contract = build_contract(
+        sample,
+        _ranked(),
+        top_k=2,
+        max_selected_docs=2,
+        action_mode="policy",
+        policy_action=RetrievalAction.RETRIEVE_MORE,
+        policy_action_confidence=0.99,
+    )
+    assert contract.retrieval_action == RetrievalAction.ANSWER_NOW
+    assert contract.uncertainty["action_mask_applied"] is True
+    assert RetrievalAction.RETRIEVE_MORE not in contract.uncertainty["available_actions"]
+
+
+def test_retrieve_more_remains_available_with_extra_documents():
+    contract = build_contract(
+        _sample_with_extra_doc(),
+        _ranked_with_extra_doc(),
+        top_k=2,
+        max_selected_docs=2,
+        action_mode="policy",
+        policy_action=RetrievalAction.RETRIEVE_MORE,
+        policy_action_confidence=0.99,
+    )
+    assert contract.retrieval_action == RetrievalAction.RETRIEVE_MORE
+    assert contract.uncertainty["action_mask_applied"] is False
+    assert RetrievalAction.RETRIEVE_MORE in contract.uncertainty["available_actions"]

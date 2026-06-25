@@ -147,7 +147,13 @@ def main():
         batch_size=cfg.training.batch_size,
         evidence_loss_weight=cfg.small_policy.evidence_loss_weight,
         action_loss_weight=cfg.small_policy.action_loss_weight,
-        calibration_loss_weight=cfg.small_policy.calibration_loss_weight)
+        calibration_loss_weight=cfg.small_policy.calibration_loss_weight,
+        action_class_weights=[
+            cfg.small_policy.answer_now_action_weight,
+            cfg.small_policy.retrieve_more_action_weight,
+            cfg.small_policy.rewrite_query_action_weight,
+            cfg.small_policy.ask_auditor_action_weight,
+        ])
     large_trainer = LargeTrainer(
         large_auditor,
         lr=cfg.training.large_lr,

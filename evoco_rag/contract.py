@@ -43,6 +43,35 @@ def _answerability_for_action(action: str, top1_conf: float, high_conf_threshold
     return Answerability.MEDIUM
 
 
+def _available_actions(num_ranked_docs: int, top_k: int) -> set[str]:
+    """Actions the environment can actually execute for this sample.
+
+    ``retrieve_more`` is only meaningful when the sample has documents beyond
+    the current top-k window. Otherwise it becomes a no-op and pollutes the
+    action-policy signal, so we mask it out before resolving policy actions.
+    """
+    actions = {RetrievalAction.ANSWER_NOW, RetrievalAction.ASK_AUDITOR}
+    if num_ranked_docs > top_k:
+        actions.add(RetrievalAction.RETRIEVE_MORE)
+    return actions
+
+
+def _fallback_executable_action(
+    action: str,
+    heuristic_action: str,
+    available_actions: set[str],
+) -> str:
+    if action in available_actions:
+        return action
+    # A masked policy action should fall back to the cheapest executable action
+    # instead of silently turning a failed retrieve_more into an auditor call.
+    if RetrievalAction.ANSWER_NOW in available_actions:
+        return RetrievalAction.ANSWER_NOW
+    if heuristic_action in available_actions:
+        return heuristic_action
+    return RetrievalAction.ASK_AUDITOR
+
+
 def _resolve_action(
     heuristic_action: str,
     heuristic_answerability: str,
@@ -52,19 +81,32 @@ def _resolve_action(
     policy_action: str | None,
     policy_action_confidence: float | None,
     policy_action_min_conf: float,
-) -> tuple[str, str, bool]:
+    available_actions: set[str] | None = None,
+) -> tuple[str, str, bool, bool]:
     if action_mode not in ACTION_MODES:
         raise ValueError(f"非法 action_mode={action_mode!r}，允许值: {sorted(ACTION_MODES)}")
+    available = available_actions or set(RetrievalAction.ALL)
+    executable_heuristic = _fallback_executable_action(
+        heuristic_action, heuristic_action, available)
+    mask_applied = executable_heuristic != heuristic_action
+
     if action_mode == "heuristic" or policy_action not in RetrievalAction.ALL:
-        return heuristic_action, heuristic_answerability, False
+        return executable_heuristic, _answerability_for_action(
+            executable_heuristic, top1_conf, high_conf_threshold), False, mask_applied
     if action_mode == "hybrid" and (
         policy_action_confidence is None or policy_action_confidence < policy_action_min_conf
     ):
-        return heuristic_action, heuristic_answerability, False
+        return executable_heuristic, _answerability_for_action(
+            executable_heuristic, top1_conf, high_conf_threshold), False, mask_applied
+
+    executable_policy = _fallback_executable_action(
+        policy_action, executable_heuristic, available)
+    mask_applied = mask_applied or executable_policy != policy_action
     return (
-        policy_action,
-        _answerability_for_action(policy_action, top1_conf, high_conf_threshold),
-        True,
+        executable_policy,
+        _answerability_for_action(executable_policy, top1_conf, high_conf_threshold),
+        executable_policy == policy_action,
+        mask_applied,
     )
 
 
@@ -104,7 +146,8 @@ def build_contract(
     heuristic_action, heuristic_answerability = _decide_action(
         top1_conf, margin, high_conf_threshold, answer_now_margin, entity_ambiguity
     )
-    action, answerability, policy_action_used = _resolve_action(
+    available_actions = _available_actions(len(ranked), top_k)
+    action, answerability, policy_action_used, action_mask_applied = _resolve_action(
         heuristic_action,
         heuristic_answerability,
         top1_conf,
@@ -113,6 +156,7 @@ def build_contract(
         policy_action,
         policy_action_confidence,
         policy_action_min_conf,
+        available_actions,
     )
 
     selected = []
@@ -165,6 +209,8 @@ def build_contract(
                 if policy_action_confidence is not None else None
             ),
             "policy_action_used": policy_action_used,
+            "action_mask_applied": action_mask_applied,
+            "available_actions": sorted(available_actions),
             "entity_ambiguity": entity_ambiguity,
             "evidence_conflict": False,
             "missing_relation": top1_conf < high_conf_threshold * 0.6,

@@ -34,7 +34,8 @@ class SmallTrainer:
                  max_length: int = 512, batch_size: int = 4,
                  evidence_loss_weight: float = 1.0,
                  action_loss_weight: float = 0.5,
-                 calibration_loss_weight: float = 0.2):
+                 calibration_loss_weight: float = 0.2,
+                 action_class_weights: Optional[list[float]] = None):
         import torch  # noqa: F401
         self.policy = policy
         self.lr = lr
@@ -44,6 +45,7 @@ class SmallTrainer:
         self.evidence_loss_weight = evidence_loss_weight
         self.action_loss_weight = action_loss_weight
         self.calibration_loss_weight = calibration_loss_weight
+        self.action_class_weights = action_class_weights
 
     def _doc_text(self, documents: list[dict], doc_id: int) -> str:
         for d in documents:
@@ -169,7 +171,15 @@ class SmallTrainer:
                             action_repr = torch.stack(action_rows, dim=0)
                             action_logits = policy_heads(action_repr)["action_logits"]
                             labels = torch.tensor(action_labels, dtype=torch.long, device=device)
-                            action_loss = F.cross_entropy(action_logits, labels)
+                            class_weights = None
+                            if self.action_class_weights is not None:
+                                class_weights = torch.tensor(
+                                    self.action_class_weights,
+                                    dtype=torch.float32,
+                                    device=device,
+                                )
+                            action_loss = F.cross_entropy(
+                                action_logits, labels, weight=class_weights)
                             loss = loss + self.action_loss_weight * action_loss
                             with torch.no_grad():
                                 preds = torch.argmax(action_logits, dim=-1)
