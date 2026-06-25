@@ -119,7 +119,7 @@ def test_retrieve_more_is_masked_when_no_extra_documents():
         policy_action=RetrievalAction.RETRIEVE_MORE,
         policy_action_confidence=0.99,
     )
-    assert contract.retrieval_action == RetrievalAction.ANSWER_NOW
+    assert contract.retrieval_action == RetrievalAction.ASK_AUDITOR
     assert contract.uncertainty["action_mask_applied"] is True
     assert RetrievalAction.RETRIEVE_MORE not in contract.uncertainty["available_actions"]
 

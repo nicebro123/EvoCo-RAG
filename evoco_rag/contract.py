@@ -63,12 +63,18 @@ def _fallback_executable_action(
 ) -> str:
     if action in available_actions:
         return action
-    # A masked policy action should fall back to the cheapest executable action
-    # instead of silently turning a failed retrieve_more into an auditor call.
-    if RetrievalAction.ANSWER_NOW in available_actions:
-        return RetrievalAction.ANSWER_NOW
+    # Preserve the executable heuristic first. In particular, a masked
+    # retrieve_more on an uncertain example should ask the auditor when the
+    # heuristic also indicates uncertainty, instead of forcing answer_now.
     if heuristic_action in available_actions:
         return heuristic_action
+    if (
+        action == RetrievalAction.RETRIEVE_MORE
+        and RetrievalAction.ASK_AUDITOR in available_actions
+    ):
+        return RetrievalAction.ASK_AUDITOR
+    if RetrievalAction.ANSWER_NOW in available_actions:
+        return RetrievalAction.ANSWER_NOW
     return RetrievalAction.ASK_AUDITOR
 
 
