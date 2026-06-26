@@ -41,6 +41,14 @@ training:
   large_batch_size: 2
   small_lr: 5.0e-5
   large_lr: 1.0e-5
+  large_train_method: grpo
+  grpo_num_generations: 2
+  grpo_n_per_train: 1
+  grpo_epochs: 1
+  grpo_beta: 0.04
+  grpo_temperature: 0.7
+  grpo_gradient_accumulation_steps: 1
+  grpo_max_steps: null
 
 reward:
   answer_weight: 1.0

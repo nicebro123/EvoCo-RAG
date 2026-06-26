@@ -281,3 +281,29 @@ def test_large_trainer_uses_compact_verifier_target():
     assert payload["final_answer"] == "politician"
     assert "audit_metadata" not in payload
     assert "raw_text" not in example["target"]
+
+
+def test_large_trainer_grpo_reward_uses_verifier_signal():
+    exp = _experience("a")
+    sample_json = json.dumps({
+        "sample_id": exp.sample_id,
+        "question": exp.question,
+        "answers": exp.answers,
+        "documents": exp.documents,
+    }, ensure_ascii=False)
+    contract_json = json.dumps(exp.contract, ensure_ascii=False)
+    rewards = []
+    reward_func = LargeTrainer.make_grpo_reward_func(reward_log=rewards)
+
+    values = reward_func(
+        completions=[
+            _audit_json(answer="politician", used_doc_ids=[0]),
+            _audit_json(answer="banker", used_doc_ids=[1]),
+        ],
+        sample_json=[sample_json, sample_json],
+        contract_json=[contract_json, contract_json],
+        round_id=[0, 0],
+    )
+
+    assert values[0] > values[1]
+    assert rewards == values

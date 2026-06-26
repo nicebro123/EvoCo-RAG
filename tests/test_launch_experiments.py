@@ -42,7 +42,7 @@ training:
 
 
 def test_stale_override_is_rejected_before_launch():
-    config = apply_overrides({}, {"training.num_generations": 2})
+    config = apply_overrides({}, {"training.policy_num_generations": 2})
     with pytest.raises(ValueError, match="unknown config keys in training"):
         EvoCoConfig.from_dict(config)
 
@@ -666,6 +666,7 @@ def test_official_popqa_experiment_specs_cover_main_studies():
     ablation_names = {item["name"] for item in specs["popqa_ablation_full_2gpu.yaml"]["experiments"]}
     assert {
         "evoco_full",
+        "large_sft_only",
         "answer_only_reward",
         "no_audit",
         "small_only",
@@ -676,6 +677,7 @@ def test_official_popqa_experiment_specs_cover_main_studies():
     hparam_names = {item["name"] for item in specs["popqa_hparam_full_2gpu.yaml"]["experiments"]}
     assert {"top3_audit1_base", "top5_audit3", "top8_audit5"}.issubset(hparam_names)
     assert {"high_conf_065_top5", "high_conf_085_top5"}.issubset(hparam_names)
+    assert "grpo_gen4_top5" in hparam_names
 
     launch_all = Path("scripts/launch_all_experiments.sh").read_text(encoding="utf-8")
     assert "configs/experiments/popqa_llama8b_full_sweep_2gpu.yaml" in launch_all

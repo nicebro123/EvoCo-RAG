@@ -47,4 +47,19 @@ def test_all_yaml_configs_load_and_keep_assets_outside_repo():
 
 def test_unknown_config_key_is_rejected():
     with pytest.raises(ValueError, match="unknown config keys in training"):
-        EvoCoConfig.from_dict({"training": {"num_generations": 2}})
+        EvoCoConfig.from_dict({"training": {"policy_num_generations": 2}})
+
+
+def test_training_config_accepts_large_grpo_options():
+    cfg = EvoCoConfig.from_dict({
+        "training": {
+            "large_train_method": "grpo",
+            "grpo_num_generations": 4,
+            "grpo_n_per_train": 2,
+            "grpo_max_steps": 3,
+        }
+    })
+    assert cfg.training.large_train_method == "grpo"
+    assert cfg.training.grpo_num_generations == 4
+    assert cfg.training.grpo_n_per_train == 2
+    assert cfg.training.grpo_max_steps == 3

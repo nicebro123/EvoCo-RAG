@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-PYTHON_BIN="${EVOCO_PYTHON:-python}"
+PYTHON_BIN="${EVOCO_PYTHON:-python3}"
 DATA_ROOT="${EVOCO_DATA_ROOT:-../rag_assets/rag_data/evoco_dataset_pack}"
 VERIFY_MAX_ROWS="${EVOCO_VERIFY_MAX_ROWS:-5}"
 GPU_PAIRS="${EVOCO_GPU_PAIRS:-}"
