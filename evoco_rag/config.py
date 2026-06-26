@@ -19,8 +19,11 @@ class ContractConfig:
     high_conf_threshold: float = 0.75
     answer_now_margin: float = 0.15
     max_selected_docs: int = 5
-    action_mode: str = "heuristic"  # heuristic | policy | hybrid
-    policy_action_min_conf: float = 0.45
+    # Optional heuristic fallback: when confidence and margin are both low and
+    # extra documents are available, prefer retrieve_more over premature answer_now.
+    # Set to None to disable for configs that need the legacy protocol.
+    retrieve_more_conf_threshold: float | None = None
+    retrieve_more_margin_threshold: float | None = None
 
 
 @dataclass
@@ -46,14 +49,7 @@ class RuntimeConfig:
 
 @dataclass
 class SmallPolicyConfig:
-    use_policy_heads: bool = False
     evidence_loss_weight: float = 1.0
-    action_loss_weight: float = 0.5
-    calibration_loss_weight: float = 0.2
-    answer_now_action_weight: float = 1.0
-    retrieve_more_action_weight: float = 1.3
-    rewrite_query_action_weight: float = 1.0
-    ask_auditor_action_weight: float = 2.0
 
 
 @dataclass
@@ -79,7 +75,6 @@ class DataConfig:
 @dataclass
 class AblationConfig:
     use_evidence_audit: bool = True
-    use_action_policy: bool = True
     use_decomposed_reward: bool = True
     train_small_lora: bool = True
     train_large_lora: bool = True

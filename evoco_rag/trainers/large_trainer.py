@@ -1,17 +1,13 @@
-"""大模型 LoRA 训练（开发文档 §5.11、§9.1、§9.2）。
+"""Large model LoRA training.
 
-两种模式：
-  - SFT  : 用 replay buffer 中 large_sft_eligible=true 的高质量样本，学习
-           "结构化答案 + 审计 JSON" 的目标输出。
-  - GRPO : 复用 TRL GRPOTrainer，但 reward_funcs 改为读取结构化 audit/verification
-           计算 decomposed reward（不再 answer-only，也不在 reward 里写训练文件）。
-torch / trl 延迟导入。
+The mainline trains the large generator/auditor with supervised JSON audit
+targets built from verifier-backed evidence.
 """
 
 from __future__ import annotations
 
 import json
-from typing import Callable, Optional
+from typing import Optional
 
 from ..auditor import build_audit_prompt
 
@@ -70,6 +66,7 @@ class LargeTrainer:
         examples = [e for e in (self._build_sft_example(x) for x in experiences) if e]
         if not examples:
             return {
+                "method": "sft",
                 "trained_samples": 0,
                 "avg_loss": None,
                 "batch_size": effective_batch_size,
@@ -127,27 +124,12 @@ class LargeTrainer:
             tok.padding_side = old_padding_side
 
         return {
+            "method": "sft",
             "trained_samples": len(examples),
             "avg_loss": (total_loss / steps) if steps else None,
             "batch_size": effective_batch_size,
             "steps": steps,
         }
-
-    # ---------------------------------------------------------------- GRPO
-    @staticmethod
-    def make_grpo_reward_func(reward_lookup: Callable[[str], float]):
-        """构造 TRL 兼容的 reward 函数：只返回大模型 reward，不写任何训练文件。
-
-        reward_lookup: sample_id -> total_reward（由 replay/verification 预先算好）。
-        """
-        def reward_func(completions, **kwargs):
-            sample_ids = kwargs.get("sample_id", [])
-            rewards = []
-            for i, _ in enumerate(completions):
-                sid = sample_ids[i] if i < len(sample_ids) else None
-                rewards.append(float(reward_lookup(sid)) if sid is not None else 0.0)
-            return rewards
-        return reward_func
 
     def save(self, out_dir: str) -> None:
         self.auditor.save_lora(out_dir)

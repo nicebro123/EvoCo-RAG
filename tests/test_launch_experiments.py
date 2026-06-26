@@ -668,28 +668,25 @@ def test_official_popqa_experiment_specs_cover_main_studies():
         "evoco_full",
         "answer_only_reward",
         "no_audit",
-        "no_action_policy",
-        "no_policy_heads",
         "small_only",
         "large_only",
-        "baseline_current_corag",
+        "baseline_no_audit_answer_only",
     } == ablation_names
 
     hparam_names = {item["name"] for item in specs["popqa_hparam_full_2gpu.yaml"]["experiments"]}
     assert {"top3_audit1_base", "top5_audit3", "top8_audit5"}.issubset(hparam_names)
     assert {"high_conf_065_top5", "high_conf_085_top5"}.issubset(hparam_names)
-    assert {"action_conf_035_top5", "action_conf_055_top5"}.issubset(hparam_names)
 
     launch_all = Path("scripts/launch_all_experiments.sh").read_text(encoding="utf-8")
     assert "configs/experiments/popqa_llama8b_full_sweep_2gpu.yaml" in launch_all
-    legacy_specs = {
+    retired_specs = {
         "popqa_sweep_full_2gpu.yaml",
         "popqa_hparam_full_2gpu.yaml",
         "multidataset_full_2gpu.yaml",
         "popqa_full_sweep_2gpu.yaml",
         "popqa_ablation_full_2gpu.yaml",
     }
-    for spec_name in legacy_specs:
+    for spec_name in retired_specs:
         assert spec_name not in launch_all
     assert "configs/experiments/popqa_fast_sweep_2gpu.yaml" not in launch_all
     assert "configs/experiments/popqa_hparam_fast_2gpu.yaml" not in launch_all

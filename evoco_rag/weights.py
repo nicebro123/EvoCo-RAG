@@ -162,8 +162,6 @@ def prepare_weight_layout(config, create: bool = True) -> dict:
         "large_latest_adapter": resolve_adapter_for_loading(config.models.large_lora_dir),
         "small_latest_round": latest_checkpoint_round(config.models.small_lora_dir),
         "large_latest_round": latest_checkpoint_round(config.models.large_lora_dir),
-        "legacy_small_adapter": "../rag_assets/adapters/reranker-CoRAG",
-        "legacy_large_adapter": "../rag_assets/adapters/generator-CoRAG",
     }
     if create:
         os.makedirs(config.output_dir, exist_ok=True)
@@ -188,7 +186,7 @@ def write_weight_manifest(config, output_dir: Optional[str] = None) -> str:
         "weights": layout,
         "models_config": asdict(config.models),
         "runtime_config": asdict(config.runtime),
-        "small_policy_config": asdict(config.small_policy),
+        "small_reranker_config": asdict(config.small_policy),
     }
     path = os.path.join(out_dir, "weights_manifest.json")
     with open(path, "w", encoding="utf-8") as f:

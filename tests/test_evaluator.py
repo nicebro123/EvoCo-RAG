@@ -6,7 +6,7 @@ from evoco_rag.schemas import RetrievalAction
 
 
 class RecordingSmall:
-    def __init__(self, action=RetrievalAction.ASK_AUDITOR):
+    def __init__(self, action=RetrievalAction.ANSWER_NOW):
         self.action = action
         self.calls = []
 
@@ -45,36 +45,22 @@ class RecordingLarge:
         return make_audit(final_answer="politician", used_doc_ids=[0]), True
 
 
-def test_run_inference_passes_action_policy_config():
+def test_run_inference_passes_evidence_budget_config():
     cfg = EvoCoConfig()
-    cfg.contract.action_mode = "hybrid"
-    cfg.contract.policy_action_min_conf = 0.77
+    cfg.contract.retrieve_more_conf_threshold = 0.62
+    cfg.contract.retrieve_more_margin_threshold = 0.05
     cfg.runtime.audit_batch_size = 3
     small = RecordingSmall()
     large = RecordingLarge()
 
     Evaluator(cfg, small, large).run_inference([make_sample()], round_id=2)
 
-    assert small.calls[0]["action_mode"] == "hybrid"
-    assert small.calls[0]["policy_action_min_conf"] == 0.77
+    assert small.calls[0]["retrieve_more_conf_threshold"] == 0.62
+    assert small.calls[0]["retrieve_more_margin_threshold"] == 0.05
     assert large.calls[0]["show_gold"] is False
     assert large.calls[0]["round_id"] == 2
     assert large.calls[0]["batch_size"] == 3
     assert large.calls[0]["candidate_counts"] == [cfg.runtime.num_audit_candidates]
-
-
-def test_run_inference_no_action_ablation_forces_answer_now():
-    cfg = EvoCoConfig()
-    cfg.ablation.use_action_policy = False
-    small = RecordingSmall(action=RetrievalAction.ASK_AUDITOR)
-    large = RecordingLarge()
-
-    Evaluator(cfg, small, large).run_inference([make_sample()])
-
-    assert large.calls[0]["contract"].retrieval_action == RetrievalAction.ANSWER_NOW
-    assert large.calls[0]["candidate_counts"] == [1]
-
-
 def test_run_inference_streams_prediction_chunks(tmp_path):
     cfg = EvoCoConfig()
     cfg.runtime.audit_batch_size = 1

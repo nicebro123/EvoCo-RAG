@@ -31,7 +31,7 @@ JSON schema:
   "support_level": "fully_supported|partially_supported|unsupported",
   "failure_type": "none|retrieval_miss|rerank_error|entity_confusion|evidence_conflict|generation_error|unsupported_answer|over_retrieval",
   "small_model_feedback": [{"doc_id": <int>, "label": "positive|negative|hard_negative|ignore", "reason": "<why>"}],
-  "suggested_action": "answer_now|retrieve_more|rewrite_query|ask_auditor"
+  "suggested_action": "answer_now|retrieve_more"
 }"""
 
 FAILURE_TYPE_DEFS = """failure_type definitions:
@@ -244,7 +244,7 @@ def fallback_audit(
         answer_correctness=AnswerCorrectness.UNKNOWN,
         support_level=SupportLevel.UNSUPPORTED,
         failure_type=FailureType.GENERATION_ERROR,
-        suggested_action=RetrievalAction.ASK_AUDITOR,
+        suggested_action=RetrievalAction.ANSWER_NOW,
         audit_metadata={
             "parse_status": "fallback",
             "schema_error": reason,

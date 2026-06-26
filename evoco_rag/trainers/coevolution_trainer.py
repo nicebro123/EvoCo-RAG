@@ -65,16 +65,9 @@ class CoevolutionTrainer:
         return max(1, int(getattr(self.cfg.runtime, "audit_batch_size", 1)))
 
     def _candidate_counts(self, contracts) -> list[int]:
-        from ..schemas import RetrievalAction
-
         audit_candidates = max(
             1, int(getattr(self.cfg.runtime, "num_audit_candidates", 1)))
-        return [
-            audit_candidates
-            if contract.retrieval_action == RetrievalAction.ASK_AUDITOR
-            else 1
-            for contract in contracts
-        ]
+        return [audit_candidates for _ in contracts]
 
     def _log_experience_progress(
         self,
@@ -140,8 +133,8 @@ class CoevolutionTrainer:
                 high_conf_threshold=cfg.contract.high_conf_threshold,
                 answer_now_margin=cfg.contract.answer_now_margin,
                 max_selected_docs=cfg.contract.max_selected_docs,
-                action_mode=cfg.contract.action_mode,
-                policy_action_min_conf=cfg.contract.policy_action_min_conf)
+                retrieve_more_conf_threshold=cfg.contract.retrieve_more_conf_threshold,
+                retrieve_more_margin_threshold=cfg.contract.retrieve_more_margin_threshold)
         else:
             # 无模型的纯逻辑回放（测试/调试用）：按文档原序当作打分
             ranked = [{"doc_id": d["doc_id"], "score": -i}
@@ -151,12 +144,8 @@ class CoevolutionTrainer:
                                       high_conf_threshold=cfg.contract.high_conf_threshold,
                                       answer_now_margin=cfg.contract.answer_now_margin,
                                       max_selected_docs=cfg.contract.max_selected_docs,
-                                      action_mode=cfg.contract.action_mode,
-                                      policy_action_min_conf=cfg.contract.policy_action_min_conf)
-        # 消融：关闭动态 action policy → 固定 answer_now（等价固定 top-k）
-        if not cfg.ablation.use_action_policy:
-            from ..schemas import RetrievalAction
-            contract.retrieval_action = RetrievalAction.ANSWER_NOW
+                                      retrieve_more_conf_threshold=cfg.contract.retrieve_more_conf_threshold,
+                                      retrieve_more_margin_threshold=cfg.contract.retrieve_more_margin_threshold)
         return contract
 
     def _placeholder_audit(self, sample, contract, round_id: int):
@@ -340,7 +329,7 @@ class CoevolutionTrainer:
             flush=True,
         )
 
-        # 训练大模型
+        # 训练大模型：主线固定使用审计 JSON SFT。
         large_started = time.time()
         large_dir = None
         if self.cfg.ablation.train_large_lora and self.large_trainer is not None:

@@ -125,7 +125,7 @@ def test_training_experience_never_exposes_gold_to_generator(tmp_path):
 
     class Small:
         def build_contract(self, sample, **kwargs):
-            return make_contract(selected_doc_ids=[0], action="ask_auditor")
+            return make_contract(selected_doc_ids=[0], action="answer_now")
 
     class Large:
         def __init__(self):
@@ -201,3 +201,38 @@ def test_failed_round_evaluation_does_not_commit_checkpoints(tmp_path):
     assert large_trainer.saved == []
     assert not (tmp_path / "checkpoints" / "small" / "round_000").exists()
     assert not (tmp_path / "checkpoints" / "large" / "round_000").exists()
+
+def test_run_round_trains_large_model_with_sft(tmp_path):
+    cfg = EvoCoConfig()
+    cfg.output_dir = str(tmp_path / "out")
+    cfg.models.large_lora_dir = str(tmp_path / "checkpoints" / "large")
+    cfg.ablation.use_evidence_audit = False
+    cfg.ablation.train_small_lora = False
+    cfg.ablation.train_large_lora = True
+
+    class LargeTrainer:
+        def __init__(self):
+            self.calls = []
+            self.saved = []
+
+        def train_sft(self, experiences, batch_size):
+            self.calls.append((experiences, batch_size))
+            return {"method": "sft", "trained_samples": len(experiences)}
+
+        def save(self, path):
+            self.saved.append(path)
+
+    large_trainer = LargeTrainer()
+    trainer = CoevolutionTrainer(
+        cfg,
+        small_policy=None,
+        large_auditor=None,
+        large_trainer=large_trainer,
+    )
+
+    stats = trainer.run_round([make_sample()], round_id=0)
+
+    assert stats["large"]["method"] == "sft"
+    assert len(large_trainer.calls) == 1
+    assert large_trainer.calls[0][1] == cfg.training.large_batch_size
+    assert large_trainer.saved
