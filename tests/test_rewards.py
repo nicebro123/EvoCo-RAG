@@ -128,3 +128,30 @@ def test_training_targets_keep_reranker_supervision_evidence_only():
     targets = build_training_targets(sample, contract, audit, verification, reward)
     assert targets["small_target_source"] == "gold_rule_verifier"
     assert set(targets["small_negative_doc_ids"]) == {1}
+
+def test_support_reward_ignores_self_reported_support_level():
+    # CoRAG-style hard anchor: if selected evidence contains the gold answer,
+    # support reward should pass even when the model self-reports unsupported.
+    sample = make_sample()
+    contract = make_contract(selected_doc_ids=[0])
+    audit = make_audit(
+        final_answer="banker",
+        used_doc_ids=[0],
+        support_level="unsupported",
+    )
+    verification = verify(sample, contract, audit, json_valid=True)
+    reward = compute_decomposed_reward(sample, contract, audit, verification)
+    assert verification.answer_match is False
+    assert verification.support_rule_passed is True
+    assert reward.support_reward == 1.0
+
+
+def test_answer_reward_uses_normalized_substring_anchor():
+    sample = make_sample()
+    contract = make_contract(selected_doc_ids=[0])
+    audit = make_audit(final_answer="He was an English politician.", used_doc_ids=[0])
+    verification = verify(sample, contract, audit, json_valid=True)
+    reward = compute_decomposed_reward(sample, contract, audit, verification)
+    assert verification.answer_match is True
+    assert reward.answer_reward == 1.0
+

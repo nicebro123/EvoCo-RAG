@@ -247,8 +247,9 @@ class LargeTrainer:
         """Train the large model with verifier-backed GRPO.
 
         This is CoRAG-style in the important sense: each prompt samples a group
-        of completions and optimizes relative rewards.  The reward itself is
-        EvoCo-RAG's verifier/decomposed reward over the generated audit JSON.
+        of completions and optimizes relative rewards. The reward itself is
+        anchored by deterministic normalized EM/sub-string checks over the
+        generated audit JSON, not by LLM-as-judge.
         """
         num_generations = max(2, int(num_generations))
         n_per_train = max(1, int(n_per_train))

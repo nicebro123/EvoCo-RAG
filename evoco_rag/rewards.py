@@ -3,6 +3,8 @@
 把原来的 answer-only reward 拆成答案/证据/引用/校准/成本五项，并按
 answer_match × support_rule_passed 的四象限，构造大小模型各自的训练 target。
 核心原则：答案对错不再是唯一信号，证据是否真正支持答案成为独立监督信号。
+所有答案/证据奖励均锚定 CoRAG-style normalized EM/sub-string 规则；不使用
+LLM-as-judge，也不把大模型自报的 support_level 当作奖励判定依据。
 """
 
 from __future__ import annotations
@@ -77,10 +79,11 @@ def compute_decomposed_reward(
 
     answer_reward = w.answer_weight * (1.0 if verification.answer_match else 0.0)
 
+    # Hard-anchor the support reward to deterministic evidence matching only.
+    # The large model still outputs support_level for logging/audit structure, but
+    # self-reported support must not decide the reward.
     support_reward = w.support_weight * (
-        1.0
-        if (verification.support_rule_passed and audit.support_level == SupportLevel.FULLY)
-        else 0.0
+        1.0 if verification.support_rule_passed else 0.0
     )
 
     citation_reward = w.citation_weight * (

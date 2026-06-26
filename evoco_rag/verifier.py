@@ -1,7 +1,9 @@
-"""规则验证器（开发文档 §4.4、§5.7）。
+"""CoRAG-style 规则验证器（开发文档 §4.4、§5.7）。
 
-独立于大模型审计：用确定性规则校验答案、引用与证据，并给大模型审计结果
-分配 audit_trust_weight，避免 LLM 审计噪声直接污染训练信号。
+本模块刻意不使用 LLM-as-judge。答案正确性采用与 CoRAG/OpenQA 常用评测
+一致的 normalized EM/sub-string hard anchor：标准答案归一化后作为子串出现在
+final_answer 中即视为命中。引用与证据支持也只用确定性规则校验，避免
+LLM 审计噪声直接污染训练信号。
 """
 
 from __future__ import annotations
@@ -41,10 +43,11 @@ def verify(
     """对单条样本做规则验证。
 
     规则（开发文档 §4.4 第一版）：
-      1. answer_match: gold answer 是否出现在 final_answer 中（exact_presence）。
+      1. answer_match: gold answer 是否出现在 final_answer 中
+         （normalized EM/sub-string，即 exact_presence）。
       2. cited_doc_contains_answer: gold answer 是否出现在 used_doc_ids 对应原文中。
       3. used_doc_in_selected_evidence: 大模型引用文档是否来自小模型合约候选。
-      4. support_rule_passed: 答案命中且引用文档确含答案依据（规则级"支持"，
+      4. support_rule_passed: 小模型选中的证据是否含 gold answer（规则级"支持"，
          不直接采信大模型自报的 support_level）。
       5. audit_trust_weight: JSON 合法 + 答案匹配 + 引用文档含答案 → 高权重，否则低权重。
     """
