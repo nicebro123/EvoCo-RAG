@@ -154,3 +154,4 @@ def test_answer_reward_uses_normalized_substring_anchor():
     reward = compute_decomposed_reward(sample, contract, audit, verification)
     assert verification.answer_match is True
     assert reward.answer_reward == 1.0
+
