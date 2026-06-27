@@ -300,7 +300,7 @@ watch -n 1 nvidia-smi
 Full experiment outputs:
 
 ```text
-../rag_assets/outputs/experiments/<study_name>_v3/<run_name>/
+../rag_assets/outputs/experiments/<study_name>_v2/<run_name>/
 ├── train.log
 ├── eval.log
 ├── replay/
@@ -312,14 +312,12 @@ Full experiment outputs:
     ├── test_predictions.jsonl
     └── test_eval.json
 
-../rag_assets/checkpoints/experiments/<study_name>_v3/<run_name>/
+../rag_assets/checkpoints/experiments/<study_name>_v2/<run_name>/
 ```
 
-Protocol-v3 metrics make `accuracy` the CoRAG-comparable answer-only metric:
-a generated `final_answer` is correct when it contains a normalized gold answer
-substring. JSON validity, evidence support, citation correctness, and cost are
-reported separately as diagnostics; they do not gate the main accuracy. Do not
-merge older protocol-v1/v2 results with these runs.
+Protocol-v2 metrics enforce non-empty schema-valid answers, record actual
+generation/audit execution, and persist per-example test predictions. Do not
+merge older protocol-v1 results with these runs.
 
 Every training round performs an independent test-set inference after both
 models are updated. Full configs use the complete test split; fast/debug configs
@@ -331,16 +329,7 @@ last round is also published as `test_eval.json` and `test_predictions.jsonl`;
 the launcher reuses these files instead of running the same final evaluation
 twice.
 
-Evaluation protocol v3 is deliberately conservative about comparisons with CoRAG:
-
-- comparable main score: `accuracy` / `corag_style_accuracy` = answer-only normalized EM/sub-string;
-- EvoCo diagnostics: `schema_valid_accuracy`, `audit_json_valid_rate`, `evidence_support_rate`, `citation_correctness`, `unsupported_answer_rate`, and cost metrics;
-- this code path intentionally does not use LLM-as-judge in training reward or final evaluation.
-
-For the full rationale and the differences from Cooperative RAG / CoRAG, see
-[docs/评估协议_v3_与_CoRAG_差异.md](docs/评估协议_v3_与_CoRAG_差异.md).
-
-After the queue finishes, aggregate all protocol-v3 runs into one summary and
+After the queue finishes, aggregate all protocol-v2 runs into one summary and
 accuracy/cost ranking table:
 
 ```bash
@@ -349,7 +338,7 @@ python scripts/summarize_experiments.py \
 ```
 
 The command writes JSON and CSV files under
-`../rag_assets/outputs/experiments/summary_v3/`. Incomplete runs and old
+`../rag_assets/outputs/experiments/summary_v2/`. Incomplete runs and old
 protocol results remain visible in the summary but are excluded from ranking.
 
 The current default full-data study uses Llama-3-8B-Instruct on PopQA. Legacy

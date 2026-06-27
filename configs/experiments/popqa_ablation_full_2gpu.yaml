@@ -10,7 +10,7 @@
 # Dry run:
 #   python scripts/launch_experiments.py --spec configs/experiments/popqa_ablation_full_2gpu.yaml
 
-study_name: evoco_popqa_ablation_full_2gpu_v3
+study_name: evoco_popqa_ablation_full_2gpu_v2
 output_root: ../rag_assets/outputs/experiments
 checkpoint_root: ../rag_assets/checkpoints/experiments
 base_config: configs/local/popqa_standard_full.yaml

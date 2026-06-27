@@ -59,11 +59,10 @@ Inspect the generated files under:
         └── test_eval.json
 ```
 
-Official full studies use evaluation protocol v3 and `_v3` study directories.
-Protocol v3 removes gold answers from all generation prompts and makes
-`accuracy` the CoRAG-comparable answer-only normalized EM/sub-string score. JSON
-validity, evidence support, citation correctness, and cost are separate
-diagnostics. Old protocol-v1/v2 outputs are intentionally not reused.
+Official full studies use evaluation protocol v2 and `_v2` study directories.
+Protocol v2 removes gold answers from all generation prompts, validates required
+audit fields, records actual candidate counts, and saves per-example test
+predictions. Old protocol-v1 outputs are intentionally not reused.
 
 After every round, training must produce both
 `metrics/test_eval_round_NNN.json` and
@@ -78,7 +77,7 @@ If the final training marker already exists but `metrics/test_eval.json` is
 missing, the launcher runs evaluation only instead of retraining into existing
 checkpoints.
 
-Aggregate completed protocol-v3 runs after the queue finishes:
+Aggregate completed protocol-v2 runs after the queue finishes:
 
 ```bash
 python scripts/summarize_experiments.py \
@@ -86,7 +85,7 @@ python scripts/summarize_experiments.py \
 ```
 
 The summary keeps incomplete and protocol-mismatched runs for diagnosis, while
-`summary_v3/experiment_ranking.csv` contains only complete protocol-v3 runs.
+`summary_v2/experiment_ranking.csv` contains only complete protocol-v2 runs.
 
 Launch sequentially in the current process:
 
@@ -99,13 +98,13 @@ python scripts/launch_experiments.py \
 Or launch the generated per-GPU script:
 
 ```bash
-bash ../rag_assets/outputs/experiments/evoco_popqa_llama8b_full_sweep_2gpu_v3/run_gpu2_3.sh
+bash ../rag_assets/outputs/experiments/evoco_popqa_llama8b_full_sweep_2gpu_v1/run_gpu2_3.sh
 ```
 
 Start all generated GPU queues in tmux:
 
 ```bash
-bash ../rag_assets/outputs/experiments/evoco_popqa_llama8b_full_sweep_2gpu_v3/launch_tmux.sh
+bash ../rag_assets/outputs/experiments/evoco_popqa_llama8b_full_sweep_2gpu_v1/launch_tmux.sh
 ```
 
 Recommended bash entrypoint for all official experiment studies:

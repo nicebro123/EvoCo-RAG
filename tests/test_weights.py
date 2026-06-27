@@ -57,7 +57,7 @@ def test_completed_training_rounds_require_all_test_artifacts(tmp_path):
     }
     (metrics / "round_000.json").write_text(json.dumps(complete), encoding="utf-8")
     test_metrics = {
-        "evaluation_protocol_version": 3,
+        "evaluation_protocol_version": 2,
         "round": 0,
         "eval_split": "test",
         "num_examples": 1,

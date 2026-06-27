@@ -1,9 +1,7 @@
-"""Evaluation metrics（开发文档 §7.1）。
+"""细粒度指标（开发文档 §7.1）。
 
-Protocol v3 keeps the CoRAG-comparable primary metric separate from EvoCo-RAG
-diagnostics. ``accuracy`` is answer-only normalized EM/sub-string matching over
-the final answer; evidence support, citation quality, JSON validity, and cost are
-reported as auxiliary diagnostics and must not be mixed into the main score.
+从一批 ReplayExperience（或等价 dict）离线计算答案 / 检索 / 证据 / 策略成本 /
+校准指标。纯 Python + numpy，可单测。
 """
 
 from __future__ import annotations
@@ -14,16 +12,6 @@ from typing import Iterable
 import numpy as np
 
 from ..text_utils import exact_presence
-
-
-EVALUATION_PROTOCOL_VERSION = 3
-PRIMARY_METRIC = "accuracy"
-ANSWER_MATCH_METRIC = "normalized_em_substring"
-PRIMARY_METRIC_DEFINITION = (
-    "CoRAG-comparable answer-only score: at least one normalized gold answer "
-    "appears as a substring of the generated final_answer. Evidence support, "
-    "citation quality, JSON validity, and cost are auxiliary diagnostics."
-)
 
 
 def _mean(xs):
@@ -48,8 +36,7 @@ def compute_metrics(experiences: Iterable) -> dict:
     if not exps:
         return {}
 
-    answer_match, schema_valid_answer_match = [], []
-    support, citation, quote_support, unsupported = [], [], [], []
+    answer_match, support, citation, quote_support, unsupported = [], [], [], [], []
     recall_at_k, mrr, answer_in_topk = [], [], []
     selected_counts, audit_calls, cost_penalties, action_cost_penalties = [], [], [], []
     generator_calls, candidate_counts, nonempty_audits = [], [], []
@@ -74,12 +61,7 @@ def compute_metrics(experiences: Iterable) -> dict:
 
         am = bool(v.get("answer_match"))
         sp = bool(v.get("support_rule_passed"))
-        json_ok = bool(v.get("json_valid", False))
-        final_answer_nonempty = bool(str(a.get("final_answer") or "").strip())
         answer_match.append(am)
-        schema_valid_answer_match.append(
-            1.0 if (am and json_ok and final_answer_nonempty) else 0.0
-        )
         support.append(sp)
         citation.append(bool(v.get("cited_doc_contains_answer")))
         trust_components = v.get("trust_components") or {}
@@ -123,7 +105,7 @@ def compute_metrics(experiences: Iterable) -> dict:
             candidate_count = 0
         candidate_counts.append(candidate_count)
         audit_calls.append(1.0 if meta.get("extra_audit_called") else 0.0)
-        empty_answers.append(0.0 if final_answer_nonempty else 1.0)
+        empty_answers.append(1.0 if not str(a.get("final_answer") or "").strip() else 0.0)
         action_fallbacks.append(1.0 if meta.get("action_fallback") else 0.0)
         cost_penalties.append(r.get("cost_penalty", 0.0))
         action_cost_penalties.append(r.get("action_cost_penalty", 0.0))
@@ -138,7 +120,7 @@ def compute_metrics(experiences: Iterable) -> dict:
             outcomes.append(1.0 if am else 0.0)
 
         trust_weights.append(float(v.get("audit_trust_weight", 0.0)))
-        json_valid.append(1.0 if json_ok else 0.0)
+        json_valid.append(1.0 if v.get("json_valid") else 0.0)
         meta = a.get("audit_metadata") or {}
         if meta.get("self_consistency") is not None:
             try:
@@ -149,37 +131,11 @@ def compute_metrics(experiences: Iterable) -> dict:
     num = len(exps)
     num_correct = sum(answer_match)
 
-    answer_only_accuracy = 100.0 * _mean(answer_match)
-
     metrics = {
-        "evaluation_protocol_version": EVALUATION_PROTOCOL_VERSION,
-        "primary_metric": PRIMARY_METRIC,
-        "primary_metric_definition": PRIMARY_METRIC_DEFINITION,
-        "answer_match_metric": ANSWER_MATCH_METRIC,
-        "corag_comparable_metric": "accuracy",
-        "metric_groups": {
-            "primary": ["accuracy", "corag_style_accuracy"],
-            "format_diagnostics": ["schema_valid_accuracy", "audit_json_valid_rate", "empty_answer_rate"],
-            "evidence_diagnostics": [
-                "evidence_support_rate",
-                "citation_correctness",
-                "evidence_quote_support_rate",
-                "used_doc_precision",
-                "unsupported_answer_rate",
-            ],
-            "cost_diagnostics": [
-                "avg_selected_docs",
-                "generator_call_rate",
-                "audit_call_rate",
-                "avg_generation_candidates",
-                "avg_total_cost_penalty",
-            ],
-        },
+        "evaluation_protocol_version": 2,
         "num_examples": num,
-        # 答案：CoRAG-style 主指标，只看 final_answer 与 gold answer 的硬匹配。
-        "accuracy": answer_only_accuracy,
-        "corag_style_accuracy": answer_only_accuracy,
-        "schema_valid_accuracy": 100.0 * _mean(schema_valid_answer_match),
+        # 答案
+        "accuracy": 100.0 * _mean(answer_match),
         # 检索
         "recall_at_k": _mean(recall_at_k),
         "mrr": _mean(mrr),
@@ -205,7 +161,7 @@ def compute_metrics(experiences: Iterable) -> dict:
         "avg_total_cost_penalty": _mean(cost_penalties),
         "cost_per_correct_answer": (sum(cost_penalties) / num_correct) if num_correct else None,
         "accuracy_cost_pareto_point": {
-            "accuracy": answer_only_accuracy,
+            "accuracy": 100.0 * _mean(answer_match),
             "avg_total_cost_penalty": _mean(cost_penalties),
             "avg_selected_docs": _mean(selected_counts),
             "audit_call_rate": _mean(audit_calls),

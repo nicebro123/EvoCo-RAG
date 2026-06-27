@@ -84,7 +84,7 @@ def _valid_round_test_artifacts(metrics_dir: str, round_id: int) -> bool:
             metrics = json.load(f)
         num_examples = int(metrics.get("num_examples", 0))
         if (
-            metrics.get("evaluation_protocol_version") != 3
+            metrics.get("evaluation_protocol_version") != 2
             or metrics.get("round") != round_id
             or metrics.get("eval_split") != "test"
             or num_examples <= 0
