@@ -29,18 +29,11 @@ overrides:
   runtime.max_completion_length: 1024
   runtime.progress_interval: 50
   runtime.replay_flush_interval: 10
-  training.large_train_method: grpo
-  training.grpo_num_generations: 2
-  training.grpo_n_per_train: 1
   training.batch_size: 4
   training.large_batch_size: 2
 
 experiments:
   - name: evoco_full
-
-  - name: large_sft_only
-    overrides:
-      training.large_train_method: sft
 
   - name: answer_only_reward
     overrides:

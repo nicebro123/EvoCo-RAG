@@ -21,9 +21,6 @@ defaults:
 overrides:
   runtime.progress_interval: 50
   runtime.replay_flush_interval: 10
-  training.large_train_method: grpo
-  training.grpo_num_generations: 2
-  training.grpo_n_per_train: 1
 
 experiments:
   - name: top3_audit1_base
@@ -103,15 +100,3 @@ experiments:
       runtime.audit_batch_size: 2
       runtime.max_prompt_length: 4096
       runtime.max_completion_length: 1024
-
-  - name: grpo_gen4_top5
-    overrides:
-      contract.top_k: 5
-      contract.max_selected_docs: 5
-      runtime.candidate_doc_char_limit: 1200
-      runtime.num_audit_candidates: 3
-      runtime.audit_batch_size: 2
-      runtime.max_prompt_length: 3072
-      runtime.max_completion_length: 1024
-      training.grpo_num_generations: 4
-      training.grpo_n_per_train: 1

@@ -155,7 +155,6 @@ def test_failed_round_evaluation_does_not_commit_checkpoints(tmp_path):
     cfg.models.small_lora_dir = str(tmp_path / "checkpoints" / "small")
     cfg.models.large_lora_dir = str(tmp_path / "checkpoints" / "large")
     cfg.ablation.use_evidence_audit = False
-    cfg.training.large_train_method = "sft"
 
     class SmallTrainer:
         def __init__(self):
@@ -210,7 +209,6 @@ def test_run_round_trains_large_model_with_sft(tmp_path):
     cfg.ablation.use_evidence_audit = False
     cfg.ablation.train_small_lora = False
     cfg.ablation.train_large_lora = True
-    cfg.training.large_train_method = "sft"
 
     class LargeTrainer:
         def __init__(self):
@@ -237,49 +235,4 @@ def test_run_round_trains_large_model_with_sft(tmp_path):
     assert stats["large"]["method"] == "sft"
     assert len(large_trainer.calls) == 1
     assert large_trainer.calls[0][1] == cfg.training.large_batch_size
-    assert large_trainer.saved
-
-
-def test_run_round_trains_large_model_with_grpo(tmp_path):
-    cfg = EvoCoConfig()
-    cfg.output_dir = str(tmp_path / "out")
-    cfg.models.large_lora_dir = str(tmp_path / "checkpoints" / "large")
-    cfg.ablation.use_evidence_audit = False
-    cfg.ablation.train_small_lora = False
-    cfg.ablation.train_large_lora = True
-    cfg.training.large_train_method = "grpo"
-    cfg.training.grpo_num_generations = 2
-    cfg.training.grpo_n_per_train = 1
-    cfg.training.grpo_max_steps = 1
-
-    class LargeTrainer:
-        def __init__(self):
-            self.calls = []
-            self.saved = []
-
-        def train_grpo(self, experiences, **kwargs):
-            self.calls.append((experiences, kwargs))
-            return {
-                "method": "grpo",
-                "trained_samples": len(experiences),
-                "num_generations": kwargs["num_generations"],
-            }
-
-        def save(self, path):
-            self.saved.append(path)
-
-    large_trainer = LargeTrainer()
-    trainer = CoevolutionTrainer(
-        cfg,
-        small_policy=None,
-        large_auditor=None,
-        large_trainer=large_trainer,
-    )
-
-    stats = trainer.run_round([make_sample()], round_id=0)
-
-    assert stats["large"]["method"] == "grpo"
-    assert len(large_trainer.calls) == 1
-    assert large_trainer.calls[0][1]["num_generations"] == 2
-    assert large_trainer.calls[0][1]["max_steps"] == 1
     assert large_trainer.saved
