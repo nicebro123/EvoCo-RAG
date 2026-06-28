@@ -33,6 +33,32 @@ class TrainingConfig:
 
 
 @dataclass
+class CABLConfig:
+    """Counterfactual Answer Boundary Learning.
+
+    CABL is disabled by default so existing EvoCo-RAG runs keep their original
+    behaviour. When enabled, large-model SFT adds a lightweight pairwise margin
+    loss that teaches the model to score a gold answer above plausible
+    counterfactual answers mined from its own errors and retrieved distractors.
+    """
+
+    enabled: bool = False
+    loss_weight: float = 0.2
+    margin: float = 0.5
+    max_negatives_per_sample: int = 3
+    min_negative_chars: int = 2
+    max_prompt_length: int = 768
+    evidence_char_limit: int = 512
+    # Modular CABL switches for ablation. Defaults preserve the original
+    # CABL behaviour unless an experiment config explicitly enables them.
+    use_model_self_error: bool = True
+    use_relation_answer_pool: bool = False
+    use_answer_type_filter: bool = False
+    use_retrieved_distractors: bool = True
+    use_counterfactual_evidence: bool = False
+
+
+@dataclass
 class RuntimeConfig:
     candidate_doc_char_limit: int = 1200
     num_audit_candidates: int = 3
@@ -95,6 +121,7 @@ class EvoCoConfig:
     contract: ContractConfig = field(default_factory=ContractConfig)
     training: TrainingConfig = field(default_factory=TrainingConfig)
     runtime: RuntimeConfig = field(default_factory=RuntimeConfig)
+    cabl: CABLConfig = field(default_factory=CABLConfig)
     small_policy: SmallPolicyConfig = field(default_factory=SmallPolicyConfig)
     reward: RewardWeights = field(default_factory=RewardWeights)
     ablation: AblationConfig = field(default_factory=AblationConfig)
@@ -116,7 +143,7 @@ class EvoCoConfig:
             raise ValueError("config must contain a mapping")
         allowed_sections = {
             "project", "data", "models", "contract", "training",
-            "runtime", "small_policy", "reward", "ablation",
+            "runtime", "cabl", "small_policy", "reward", "ablation",
         }
         unknown_sections = sorted(set(d) - allowed_sections)
         if unknown_sections:
@@ -141,6 +168,7 @@ class EvoCoConfig:
             training=cls._build_section(
                 "training", TrainingConfig, d.get("training", {})),
             runtime=cls._build_section("runtime", RuntimeConfig, d.get("runtime", {})),
+            cabl=cls._build_section("cabl", CABLConfig, d.get("cabl", {})),
             small_policy=cls._build_section(
                 "small_policy", SmallPolicyConfig, d.get("small_policy", {})),
             reward=cls._build_section("reward", RewardWeights, reward_raw),

@@ -48,3 +48,27 @@ def test_all_yaml_configs_load_and_keep_assets_outside_repo():
 def test_unknown_config_key_is_rejected():
     with pytest.raises(ValueError, match="unknown config keys in training"):
         EvoCoConfig.from_dict({"training": {"num_generations": 2}})
+
+
+def test_cabl_config_is_optional_and_loadable():
+    cfg = EvoCoConfig.from_dict({
+        "cabl": {
+            "enabled": True,
+            "loss_weight": 0.3,
+            "margin": 0.8,
+            "max_negatives_per_sample": 4,
+            "max_prompt_length": 512,
+            "use_relation_answer_pool": True,
+            "use_answer_type_filter": True,
+            "use_counterfactual_evidence": True,
+        }
+    })
+
+    assert cfg.cabl.enabled is True
+    assert cfg.cabl.loss_weight == 0.3
+    assert cfg.cabl.margin == 0.8
+    assert cfg.cabl.max_negatives_per_sample == 4
+    assert cfg.cabl.max_prompt_length == 512
+    assert cfg.cabl.use_relation_answer_pool is True
+    assert cfg.cabl.use_answer_type_filter is True
+    assert cfg.cabl.use_counterfactual_evidence is True

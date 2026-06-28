@@ -13,6 +13,7 @@ from typing import Optional
 
 from .auditor import build_audit_prompt, parse_audit
 from .schemas import EvidenceContract, FailureType, LargeAudit, RagSample, SupportLevel
+from .text_utils import exact_presence
 
 
 class LargeGeneratorAuditor:
@@ -153,6 +154,38 @@ class LargeGeneratorAuditor:
         return quote.lower() in text
 
     @staticmethod
+    def _answer_grounded_in_used_evidence(sample: RagSample, audit: LargeAudit) -> tuple[bool, bool]:
+        """Check whether the predicted answer is grounded in cited evidence.
+
+        This uses only the model's own answer/citations and the provided
+        documents. It deliberately does not inspect gold answers, so it is safe
+        for inference-time candidate selection. A candidate whose final answer
+        is literally present in the cited quote/document is usually more stable
+        than one that merely self-reports ``fully_supported``.
+        """
+        answer = (audit.final_answer or "").strip()
+        if not answer:
+            return False, False
+
+        quote_hit = False
+        for evidence in audit.used_evidence or []:
+            if not isinstance(evidence, dict):
+                continue
+            quote = str(evidence.get("quote") or "")
+            if exact_presence([answer], quote):
+                quote_hit = True
+                break
+
+        doc_hit = False
+        for doc_id in audit.used_doc_ids:
+            doc = sample.doc_by_id(doc_id) or {}
+            text = doc.get("text") or doc.get("raw") or ""
+            if exact_presence([answer], text):
+                doc_hit = True
+                break
+        return quote_hit, doc_hit
+
+    @staticmethod
     def score_audit_candidate(
         sample: RagSample,
         contract: EvidenceContract,
@@ -209,6 +242,15 @@ class LargeGeneratorAuditor:
             score += min(1.0, hits / max(1, len(evidence)))
             if hits == 0:
                 score -= 0.5
+
+        quote_answer_hit, doc_answer_hit = LargeGeneratorAuditor._answer_grounded_in_used_evidence(
+            sample, audit)
+        if quote_answer_hit:
+            score += 1.25
+        elif doc_answer_hit:
+            score += 0.75
+        elif answer:
+            score -= 1.0
 
         return round(score, 4)
 

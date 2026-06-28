@@ -146,14 +146,18 @@ class SmallRagPolicy:
             )
             scores = out.logits.view(-1).float().cpu().tolist()
             evidence_confidences = None
+            evidence_logits_values = None
             confidence_scores = None
             if use_trained_heads and out.hidden_states:
                 pooled = out.hidden_states[-1][:, 0]
                 head_out = self.policy_heads(pooled)
                 evidence_confidences = torch.sigmoid(
-                    head_out["evidence_logits"]).float().cpu().tolist()
+                    head_out["evidence_logits"].view(-1)).float().cpu().tolist()
+                evidence_logits_values = (
+                    head_out["evidence_logits"].view(-1).float().cpu().tolist()
+                )
                 confidence_scores = torch.sigmoid(
-                    head_out["confidence_logits"]).float().cpu().tolist()
+                    head_out["confidence_logits"].view(-1)).float().cpu().tolist()
                 action_logits = head_out["action_logits"].mean(dim=0).float().cpu()
                 action_probs = torch.softmax(action_logits, dim=-1)
                 action_id = int(torch.argmax(action_logits).item())
@@ -167,9 +171,23 @@ class SmallRagPolicy:
                 self.last_policy_prediction = {}
         ranked = []
         for i, (doc, score) in enumerate(zip(sample.documents, scores)):
-            item = {"doc_id": doc["doc_id"], "score": float(score)}
+            base_score = float(score)
+            rank_score = base_score
+            if evidence_logits_values is not None:
+                # The LoRA reranker remains the backbone score. Once the
+                # evidence head has been trained, use it as a conservative
+                # learned reranking boost so the head actually affects top-k
+                # selection instead of being used only for diagnostics.
+                evidence_boost = max(-2.0, min(2.0, float(evidence_logits_values[i])))
+                rank_score = base_score + evidence_boost
+            item = {
+                "doc_id": doc["doc_id"],
+                "score": float(rank_score),
+                "base_score": base_score,
+            }
             if evidence_confidences is not None:
                 item["evidence_confidence"] = float(evidence_confidences[i])
+                item["evidence_rank_boost"] = float(rank_score - base_score)
             if confidence_scores is not None:
                 item["policy_confidence"] = float(confidence_scores[i])
             ranked.append(item)

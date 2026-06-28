@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from collections import Counter
 from typing import Iterable
+import json
 
 import numpy as np
 
@@ -31,12 +32,37 @@ def _relevant_ids(documents, answers):
             if exact_presence(answers, d.get("text") or d.get("raw") or "")}
 
 
+def _corag_style_response_text(audit: dict) -> str:
+    """Generated text used for CoRAG-style answer containment.
+
+    CoRAG scores whether a gold answer appears anywhere in the model response.
+    Our response is usually JSON, so use only generated audit artifacts:
+    raw completion text, parsed raw_json, and final_answer as fallback.
+    Do not include input documents or prompts.
+    """
+    meta = audit.get("audit_metadata") or {}
+    parts = []
+    raw_text = meta.get("raw_text")
+    if raw_text:
+        parts.append(str(raw_text))
+    raw_json = meta.get("raw_json")
+    if raw_json:
+        try:
+            parts.append(json.dumps(raw_json, ensure_ascii=False))
+        except TypeError:
+            parts.append(str(raw_json))
+    final_answer = audit.get("final_answer")
+    if final_answer:
+        parts.append(str(final_answer))
+    return "\n".join(parts)
+
+
 def compute_metrics(experiences: Iterable) -> dict:
     exps = [e if isinstance(e, dict) else e.to_dict() for e in experiences]
     if not exps:
         return {}
 
-    answer_match, support, citation, quote_support, unsupported = [], [], [], [], []
+    answer_match, corag_style_match, support, citation, quote_support, unsupported = [], [], [], [], [], []
     recall_at_k, mrr, answer_in_topk = [], [], []
     selected_counts, audit_calls, cost_penalties, action_cost_penalties = [], [], [], []
     generator_calls, candidate_counts, nonempty_audits = [], [], []
@@ -62,6 +88,8 @@ def compute_metrics(experiences: Iterable) -> dict:
         am = bool(v.get("answer_match"))
         sp = bool(v.get("support_rule_passed"))
         answer_match.append(am)
+        corag_style_match.append(
+            1.0 if exact_presence(answers, _corag_style_response_text(a)) else 0.0)
         support.append(sp)
         citation.append(bool(v.get("cited_doc_contains_answer")))
         trust_components = v.get("trust_components") or {}
@@ -133,12 +161,35 @@ def compute_metrics(experiences: Iterable) -> dict:
 
     num = len(exps)
     num_correct = sum(answer_match)
+    strict_accuracy = 100.0 * _mean(answer_match)
+    corag_style_accuracy = 100.0 * _mean(corag_style_match)
+    strict_vs_corag_gap = corag_style_accuracy - strict_accuracy
 
     metrics = {
-        "evaluation_protocol_version": 2,
+        "evaluation_protocol_version": 3,
+        "primary_accuracy_metric": "strict_accuracy",
+        "metric_definitions": {
+            "strict_accuracy": (
+                "Final-answer accuracy under EvoCo verification: the parsed "
+                "final_answer must match a gold alias under normalized matching."
+            ),
+            "accuracy": "Backward-compatible alias of strict_accuracy.",
+            "corag_style_accuracy": (
+                "CoRAG-style containment accuracy: a gold alias appears in the "
+                "generated completion/raw JSON/final_answer only; input documents "
+                "and prompts are explicitly excluded."
+            ),
+            "strict_vs_corag_style_accuracy_gap": (
+                "corag_style_accuracy - strict_accuracy; larger values mean the "
+                "CoRAG-style protocol is more permissive than strict final-answer scoring."
+            ),
+        },
         "num_examples": num,
         # 答案
-        "accuracy": 100.0 * _mean(answer_match),
+        "strict_accuracy": strict_accuracy,
+        "accuracy": strict_accuracy,
+        "corag_style_accuracy": corag_style_accuracy,
+        "strict_vs_corag_style_accuracy_gap": strict_vs_corag_gap,
         # 检索
         "recall_at_k": _mean(recall_at_k),
         "mrr": _mean(mrr),
@@ -164,7 +215,9 @@ def compute_metrics(experiences: Iterable) -> dict:
         "avg_total_cost_penalty": _mean(cost_penalties),
         "cost_per_correct_answer": (sum(cost_penalties) / num_correct) if num_correct else None,
         "accuracy_cost_pareto_point": {
-            "accuracy": 100.0 * _mean(answer_match),
+            "strict_accuracy": strict_accuracy,
+            "accuracy": strict_accuracy,
+            "corag_style_accuracy": corag_style_accuracy,
             "avg_total_cost_penalty": _mean(cost_penalties),
             "avg_selected_docs": _mean(selected_counts),
             "audit_call_rate": _mean(audit_calls),

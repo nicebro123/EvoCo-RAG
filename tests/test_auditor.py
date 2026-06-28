@@ -34,6 +34,7 @@ def test_parse_audit_valid():
     assert audit.used_doc_ids == [0]
     assert audit.audit_metadata["parse_status"] == "parsed"
     assert audit.audit_metadata["raw_json"]["final_answer"] == "politician"
+    assert audit.audit_metadata["raw_text"] == text
 
 
 def test_parse_audit_rejects_illegal_enum_and_missing_fields():

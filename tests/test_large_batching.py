@@ -134,6 +134,33 @@ def test_invalid_candidates_do_not_create_fake_self_consistency():
     assert audit.audit_metadata["self_consistency"] == 0.0
 
 
+
+def test_candidate_scoring_prefers_answers_grounded_in_used_evidence():
+    sample = make_sample()
+    contract = make_contract(selected_doc_ids=[0])
+    grounded = make_audit(final_answer="politician", used_doc_ids=[0])
+    ungrounded = make_audit(final_answer="banker", used_doc_ids=[0])
+
+    assert LargeGeneratorAuditor.score_audit_candidate(
+        sample, contract, grounded, json_valid=True
+    ) > LargeGeneratorAuditor.score_audit_candidate(
+        sample, contract, ungrounded, json_valid=True
+    )
+
+
+def test_large_sft_prompt_uses_auditor_candidate_char_limit():
+    exp = _experience("sample-char-limit")
+    exp.documents[0]["text"] = "A" * 100
+    exp.documents[0]["raw"] = "A" * 100
+    exp.contract["candidate_docs"] = [{"doc_id": 0, "rank": 1, "doc_score": 1.0}]
+    trainer = LargeTrainer(SimpleNamespace(candidate_doc_char_limit=8))
+
+    example = trainer._build_sft_example(exp)
+    user_content = example["messages"][1]["content"]
+
+    assert "AAAAAAAA ..." in user_content
+    assert "AAAAAAAAA" not in user_content
+
 def _experience(sample_id: str) -> ReplayExperience:
     sample = make_sample()
     sample.sample_id = sample_id
@@ -281,3 +308,22 @@ def test_large_trainer_uses_compact_verifier_target():
     assert payload["final_answer"] == "politician"
     assert "audit_metadata" not in payload
     assert "raw_text" not in example["target"]
+
+
+def test_large_trainer_builds_cabl_boundary_pairs_when_enabled():
+    exp = _experience("cabl")
+    exp.verification = {"answer_match": False}
+    exp.audit["final_answer"] = "banker"
+    trainer = LargeTrainer(
+        SimpleNamespace(candidate_doc_char_limit=1200),
+        cabl_enabled=True,
+        cabl_margin=0.7,
+        cabl_max_negatives_per_sample=2,
+    )
+
+    example = trainer._build_sft_example(exp)
+
+    assert example["boundary_pairs"]
+    assert example["boundary_pairs"][0]["positive"] == "politician"
+    assert example["boundary_pairs"][0]["negative"] == "banker"
+    assert example["boundary_pairs"][0]["margin"] == 0.7

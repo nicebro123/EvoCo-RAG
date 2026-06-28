@@ -62,7 +62,14 @@ def build_audit_prompt(
         "you must (1) answer the question, (2) cite which documents you used, and "
         "(3) audit whether the evidence truly supports your answer. "
         "For factoid QA, final_answer must be the shortest correct entity or phrase, "
-        "not a full sentence and not an explanation.\n\n"
+        "not a full sentence and not an explanation. Prefer an answer phrase that "
+        "appears verbatim in the quoted evidence. Be careful with same-name or "
+        "near-name distractors: the cited document must describe the entity asked "
+        "in the question, not another entity. For occupation questions, output the "
+        "profession/category phrase explicitly associated with the question entity; "
+        "do not output nationalities, dates, titles, or an unrelated role from a "
+        "different same-name person. If several occupations are supported, choose "
+        "the concise common category rather than a long biographical sentence.\n\n"
         + AUDIT_JSON_SCHEMA_HINT + "\n\n" + FAILURE_TYPE_DEFS
     )
 
@@ -78,6 +85,13 @@ def build_audit_prompt(
         truncated = text[:limit]
         suffix = " ..." if len(text) > limit else ""
         lines.append(f"  [doc_id={cand.get('doc_id')}] {doc.get('title', '')}: {truncated}{suffix}")
+    lines.append("")
+    lines.append("Answer selection rules:")
+    lines.append("  - final_answer should be copied from the evidence whenever possible.")
+    lines.append("  - cited quotes must contain the answer phrase or directly justify it.")
+    lines.append("  - reject same-name distractors whose title/content does not match the question entity.")
+    lines.append("  - for 'What is X\'s occupation?' choose X's occupation/profession, not a birthplace, nationality, date, honorific, or another person's role.")
+    lines.append("  - if selected evidence is about the wrong entity, use a better candidate document or mark the answer unsupported.")
     if show_gold:
         lines.append("")
         lines.append(f"(Training-only) Gold answers: {sample.answers}")
@@ -275,6 +289,9 @@ def parse_audit(text: str, sample_id: str, round_id: int) -> tuple[LargeAudit, b
         audit.audit_metadata = {
             **(audit.audit_metadata or {}),
             "parse_status": "parsed",
+            # Generated completion only; prompts/documents are intentionally
+            # excluded so CoRAG-style metrics do not count input evidence.
+            "raw_text": (text or "")[:8000],
             "raw_json": block,
         }
         return audit, True

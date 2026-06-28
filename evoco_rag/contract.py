@@ -189,6 +189,10 @@ def build_contract(
             "doc_id": d["doc_id"],
             "rank": i + 1,
             "doc_score": round(float(d["score"]), 4),
+            **({"base_score": round(float(d["base_score"]), 4)}
+               if "base_score" in d else {}),
+            **({"evidence_rank_boost": round(float(d["evidence_rank_boost"]), 4)}
+               if "evidence_rank_boost" in d else {}),
             **({"evidence_confidence": round(float(d["evidence_confidence"]), 4)}
                if "evidence_confidence" in d else {}),
             **({"policy_confidence": round(float(d["policy_confidence"]), 4)}

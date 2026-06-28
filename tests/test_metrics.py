@@ -23,7 +23,9 @@ def _exp(selected_ids, final_answer):
 def test_metrics_keys_and_accuracy():
     exps = [_exp([0], "politician"), _exp([1], "banker")]
     m = compute_metrics(exps)
-    for key in ("accuracy", "recall_at_k", "mrr", "evidence_support_rate",
+    for key in ("strict_accuracy", "accuracy", "corag_style_accuracy",
+                "strict_vs_corag_style_accuracy_gap",
+                "recall_at_k", "mrr", "evidence_support_rate",
                 "citation_correctness", "unsupported_answer_rate",
                 "evidence_quote_support_rate",
                 "avg_selected_docs", "generator_call_rate", "audit_call_rate",
@@ -37,9 +39,34 @@ def test_metrics_keys_and_accuracy():
                 "accuracy_cost_pareto_point"):
         assert key in m
     assert m["num_examples"] == 2
-    assert m["evaluation_protocol_version"] == 2
-    assert m["accuracy"] == 50.0  # 一对一错
+    assert m["evaluation_protocol_version"] == 3
+    assert m["primary_accuracy_metric"] == "strict_accuracy"
+    assert m["strict_accuracy"] == 50.0  # 一对一错
+    assert m["accuracy"] == 50.0  # backward-compatible alias
+    assert m["corag_style_accuracy"] == 50.0
     assert "avg_total_cost_penalty" in m["accuracy_cost_pareto_point"]
+    assert "strict_accuracy" in m["accuracy_cost_pareto_point"]
+    assert "corag_style_accuracy" in m["accuracy_cost_pareto_point"]
+
+
+def test_corag_style_accuracy_uses_generated_raw_text_not_documents():
+    exp = _exp([0], "architect")
+    exp.audit["audit_metadata"] = {
+        "raw_text": "Document analysis says the person was a politician, but final answer is architect."
+    }
+    m = compute_metrics([exp])
+    assert m["accuracy"] == 0.0
+    assert m["corag_style_accuracy"] == 100.0
+    assert m["strict_vs_corag_style_accuracy_gap"] == 100.0
+
+
+def test_corag_style_accuracy_does_not_count_input_documents():
+    exp = _exp([0], "architect")
+    exp.audit["audit_metadata"] = {"raw_text": "final answer is architect"}
+    m = compute_metrics([exp])
+    assert m["accuracy"] == 0.0
+    assert m["corag_style_accuracy"] == 0.0
+
 
 
 def test_unsupported_answer_rate():

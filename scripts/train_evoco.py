@@ -159,7 +159,19 @@ def main():
         lr=cfg.training.large_lr,
         max_prompt_length=cfg.runtime.max_prompt_length,
         max_completion_length=cfg.runtime.max_completion_length,
-        batch_size=cfg.training.large_batch_size)
+        batch_size=cfg.training.large_batch_size,
+        cabl_enabled=cfg.cabl.enabled,
+        cabl_loss_weight=cfg.cabl.loss_weight,
+        cabl_margin=cfg.cabl.margin,
+        cabl_max_negatives_per_sample=cfg.cabl.max_negatives_per_sample,
+        cabl_min_negative_chars=cfg.cabl.min_negative_chars,
+        cabl_max_prompt_length=cfg.cabl.max_prompt_length,
+        cabl_evidence_char_limit=cfg.cabl.evidence_char_limit,
+        cabl_use_model_self_error=cfg.cabl.use_model_self_error,
+        cabl_use_relation_answer_pool=cfg.cabl.use_relation_answer_pool,
+        cabl_use_answer_type_filter=cfg.cabl.use_answer_type_filter,
+        cabl_use_retrieved_distractors=cfg.cabl.use_retrieved_distractors,
+        cabl_use_counterfactual_evidence=cfg.cabl.use_counterfactual_evidence)
     evaluator = Evaluator(cfg, small_policy, large_auditor, test_samples=test_samples)
 
     trainer = CoevolutionTrainer(cfg, small_policy, large_auditor,
