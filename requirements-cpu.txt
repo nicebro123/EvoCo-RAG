@@ -2,3 +2,4 @@ numpy
 pytest
 pyyaml
 matplotlib
+pyparsing==3.2.5
