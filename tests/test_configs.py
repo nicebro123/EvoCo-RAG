@@ -61,6 +61,10 @@ def test_cabl_config_is_optional_and_loadable():
             "use_relation_answer_pool": True,
             "use_answer_type_filter": True,
             "use_counterfactual_evidence": True,
+            "hard_aware_enabled": True,
+            "hard_pair_weight": 2.5,
+            "skip_retrieval_absent": False,
+            "relation_hint_enabled": False,
         }
     })
 
@@ -72,3 +76,7 @@ def test_cabl_config_is_optional_and_loadable():
     assert cfg.cabl.use_relation_answer_pool is True
     assert cfg.cabl.use_answer_type_filter is True
     assert cfg.cabl.use_counterfactual_evidence is True
+    assert cfg.cabl.hard_aware_enabled is True
+    assert cfg.cabl.hard_pair_weight == 2.5
+    assert cfg.cabl.skip_retrieval_absent is False
+    assert cfg.cabl.relation_hint_enabled is False

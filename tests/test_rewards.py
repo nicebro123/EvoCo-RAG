@@ -153,3 +153,16 @@ def test_evolution_signal_routes_rerank_miss_to_small_model():
     assert signal["answer_in_selected_evidence"] is False
     assert signal["should_train_retriever"] is True
     assert signal["should_train_generator_boundary"] is False
+
+
+def test_evolution_signal_detects_relation_confusion():
+    # selected evidence contains the gold occupation, but the model copies a
+    # plausible occupation from a same-name distractor in the candidate set.
+    _, _, t = _pipeline(selected_ids=[0, 1], final_answer="officer")
+    signal = t["evolution_signal"]
+
+    assert signal["relation"] == "occupation"
+    assert signal["failure_mode"] == "relation_confusion"
+    assert signal["target_module"] == "large"
+    assert signal["wrong_answer_in_candidate_docs"] is True
+    assert signal["should_train_generator_boundary"] is True

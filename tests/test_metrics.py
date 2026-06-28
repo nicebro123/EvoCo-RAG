@@ -33,6 +33,8 @@ def test_metrics_keys_and_accuracy():
                 "empty_answer_rate", "unfulfilled_action_rate",
                 "attribution_case_distribution", "wrong_retriever_reward_rate",
                 "audit_json_valid_rate", "audit_trust_weight_mean",
+                "evolution_failure_mode_distribution", "evolution_relation_distribution",
+                "evolution_target_module_distribution",
                 "audit_schema_valid_rate", "audit_parse_status_distribution",
                 "audit_schema_error_distribution",
                 "avg_action_cost_penalty", "avg_total_cost_penalty",
@@ -47,6 +49,9 @@ def test_metrics_keys_and_accuracy():
     assert "avg_total_cost_penalty" in m["accuracy_cost_pareto_point"]
     assert "strict_accuracy" in m["accuracy_cost_pareto_point"]
     assert "corag_style_accuracy" in m["accuracy_cost_pareto_point"]
+    assert m["evolution_failure_mode_distribution"] == {"success": 1, "rerank_miss": 1}
+    assert m["evolution_relation_distribution"] == {"occupation": 2}
+    assert m["evolution_target_module_distribution"] == {"none": 1, "small": 1}
 
 
 def test_corag_style_accuracy_uses_generated_raw_text_not_documents():

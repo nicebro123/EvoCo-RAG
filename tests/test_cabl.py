@@ -91,6 +91,24 @@ def test_cabl_type_filter_removes_trivial_occupation_distractors():
     assert all(item["answer"] not in {"June", "1955", "Georgia"} for item in negatives)
 
 
+def test_cabl_mines_lowercase_occupation_distractors():
+    exp = _exp(answer_match=True, final_answer="politician")
+    exp.documents[1]["text"] = (
+        "Colonel Henry Wemyss Feilden was a British Army officer and naturalist."
+    )
+
+    negatives = mine_counterfactual_answers(
+        exp,
+        max_negatives=5,
+        use_model_self_error=False,
+        use_relation_answer_pool=False,
+        use_answer_type_filter=True,
+        use_retrieved_distractors=True,
+    )
+
+    assert {item["answer"] for item in negatives} & {"officer", "naturalist"}
+
+
 def test_cabl_counterfactual_evidence_switch_adds_corrupted_evidence():
     base = _exp(answer_match=True, final_answer="politician")
     actor_exp = _exp(answer_match=True, final_answer="actor")

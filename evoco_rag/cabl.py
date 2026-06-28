@@ -49,8 +49,20 @@ _NATIONALITY_TERMS = {
 }
 
 _LOCATION_TERMS = {
-    "city", "country", "county", "district", "province", "state", "town", "village",
+    "borough", "capital", "city", "commune", "country", "county", "district",
+    "island", "islands", "kingdom", "municipality", "prefecture", "province",
+    "region", "republic", "state", "states", "territory", "town", "village",
 }
+
+_OCCUPATION_PATTERN = re.compile(
+    r"\b(?:"
+    + "|".join(
+        re.escape(term)
+        for term in sorted(_OCCUPATION_TERMS, key=len, reverse=True)
+    )
+    + r")\b",
+    flags=re.IGNORECASE,
+)
 
 
 def relation_key_for_question(question: str) -> str:
@@ -160,7 +172,10 @@ def _matches_relation_type(answer: str, relation: str) -> bool:
     if relation == "date":
         return _looks_like_date(answer)
     if relation == "nationality":
-        return _looks_like_nationality(answer)
+        # Nationality/citizenship questions are often annotated either as
+        # demonyms ("American") or countries ("United States"). Keep both so
+        # the type filter does not discard valid same-relation CABL examples.
+        return _looks_like_nationality(answer) or _looks_like_location(answer)
     if relation in {"location", "person"}:
         return _looks_like_location(answer)
     return True
@@ -237,6 +252,19 @@ def _same_answer(candidate: str, answers: list[str]) -> bool:
         if cand == gold or cand in gold or gold in cand:
             return True
     return False
+
+
+def _candidate_answer_spans(text: str, relation: str) -> list[str]:
+    """Return conservative answer-like spans for relation-aware negatives."""
+
+    text = str(text or "")
+    spans = [match.group(0) for match in _ENTITY_LIKE.finditer(text)]
+    if relation == "occupation":
+        # Entity-like mining misses lowercase occupation labels such as
+        # "officer" or "naturalist", which are exactly the distractors that
+        # PopQA occupation questions often confuse with the gold answer.
+        spans.extend(match.group(0) for match in _OCCUPATION_PATTERN.finditer(text))
+    return spans
 
 
 def _doc_text(doc: dict) -> str:
@@ -411,8 +439,8 @@ def mine_counterfactual_answers(
             if not text:
                 continue
             contains_gold = exact_presence(answers, text)
-            for match in _ENTITY_LIKE.finditer(text[:1600]):
-                span = _clean_answer(match.group(0))
+            for span in _candidate_answer_spans(text[:1600], relation):
+                span = _clean_answer(span)
                 if not span or not type_ok(span):
                     continue
                 _add_candidate(
@@ -470,6 +498,7 @@ def build_boundary_pairs(
         "relation_confusion", "generation_error",
     }
     pair_weight = float(hard_pair_weight if hard_boundary else 1.0)
+    candidate_doc_ids = _candidate_doc_ids(exp)
     pairs = []
     for neg in mine_counterfactual_answers(
         exp,
@@ -484,7 +513,7 @@ def build_boundary_pairs(
     ):
         evidence = neg.get("evidence", "")
         if not evidence and exp.documents:
-            first_doc_id = _candidate_doc_ids(exp)[0] if _candidate_doc_ids(exp) else None
+            first_doc_id = candidate_doc_ids[0] if candidate_doc_ids else None
             doc = _doc_by_id(exp.documents, first_doc_id) if first_doc_id is not None else None
             evidence = _short_context(_doc_text(doc or {}))
         pair = {
