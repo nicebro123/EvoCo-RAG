@@ -128,3 +128,28 @@ def test_action_target_retrieve_more_only_when_extra_docs_exist():
     reward = compute_decomposed_reward(sample, contract, audit, verification)
     targets = build_training_targets(sample, contract, audit, verification, reward)
     assert targets["small_action_target"] == RetrievalAction.RETRIEVE_MORE
+
+
+def test_evolution_signal_routes_generator_fail_to_large_boundary():
+    _, _, t = _pipeline(selected_ids=[0], final_answer="banker")
+    signal = t["evolution_signal"]
+
+    assert signal["relation"] == "occupation"
+    assert signal["failure_mode"] == "generation_error"
+    assert signal["target_module"] == "large"
+    assert signal["hard_sample"] is True
+    assert signal["should_train_generator_boundary"] is True
+    assert signal["should_train_retriever"] is False
+
+
+def test_evolution_signal_routes_rerank_miss_to_small_model():
+    _, _, t = _pipeline(selected_ids=[1], final_answer="banker")
+    signal = t["evolution_signal"]
+
+    assert signal["failure_mode"] == "rerank_miss"
+    assert signal["target_module"] == "small"
+    assert signal["answer_in_any_doc"] is True
+    assert signal["answer_in_candidate_docs"] is True
+    assert signal["answer_in_selected_evidence"] is False
+    assert signal["should_train_retriever"] is True
+    assert signal["should_train_generator_boundary"] is False

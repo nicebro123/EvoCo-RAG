@@ -70,6 +70,9 @@ def compute_metrics(experiences: Iterable) -> dict:
     used_precisions = []
     confidences, outcomes = [], []
     attribution_cases = Counter()
+    evolution_failure_modes = Counter()
+    evolution_relations = Counter()
+    evolution_target_modules = Counter()
     action_counts = Counter()
     parse_status_counts = Counter()
     schema_error_counts = Counter()
@@ -96,6 +99,11 @@ def compute_metrics(experiences: Iterable) -> dict:
         quote_support.append(float(trust_components.get("evidence_quote_support_score", 0.0)))
         unsupported.append(1.0 if (am and not sp) else 0.0)
         attribution_cases[tt.get("attribution_case") or r.get("attribution_case") or "unknown"] += 1
+        evolution_signal = tt.get("evolution_signal") or {}
+        if evolution_signal:
+            evolution_failure_modes[evolution_signal.get("failure_mode") or "unknown"] += 1
+            evolution_relations[evolution_signal.get("relation") or "unknown"] += 1
+            evolution_target_modules[evolution_signal.get("target_module") or "unknown"] += 1
         wrong_retriever_rewards.append(
             1.0 if tt.get("wrong_retriever_reward_if_answer_only") else 0.0)
 
@@ -201,6 +209,9 @@ def compute_metrics(experiences: Iterable) -> dict:
         "used_doc_precision": _mean(used_precisions) if used_precisions else 0.0,
         "unsupported_answer_rate": _mean(unsupported),
         "attribution_case_distribution": dict(attribution_cases),
+        "evolution_failure_mode_distribution": dict(evolution_failure_modes),
+        "evolution_relation_distribution": dict(evolution_relations),
+        "evolution_target_module_distribution": dict(evolution_target_modules),
         "wrong_retriever_reward_rate": _mean(wrong_retriever_rewards),
         # 策略成本
         "avg_selected_docs": _mean(selected_counts),

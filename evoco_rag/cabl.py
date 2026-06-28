@@ -65,13 +65,55 @@ def relation_key_for_question(question: str) -> str:
         return "occupation"
     if q.startswith("when ") or " date" in q or " year" in q:
         return "date"
-    if q.startswith("where ") or any(x in q for x in ("birthplace", "born in", "located")):
+    if q.startswith("where ") or any(
+        x in q
+        for x in (
+            "birthplace", "birth place", "place of birth", "born in",
+            "born at", "was born", "were born", "birth city",
+            "birth country", "located",
+        )
+    ):
         return "location"
     if "nationality" in q or "citizen" in q or "country" in q:
         return "nationality"
     if any(x in q for x in ("spouse", "wife", "husband", "father", "mother", "child")):
         return "person"
     return "generic"
+
+
+def relation_guidance(relation: str) -> str:
+    """Human-readable relation constraint for CABL boundary prompts."""
+
+    if relation == "occupation":
+        return (
+            "Choose the occupation/profession explicitly associated with the "
+            "question entity; do not choose nationality, honorifics, employer "
+            "names, or another same-name person's job."
+        )
+    if relation == "location":
+        return (
+            "Choose the location explicitly asked for by the question, such as "
+            "birthplace when the question asks place of birth; do not choose "
+            "nationality, residence, death place, workplace, or a same-name "
+            "entity's location."
+        )
+    if relation == "nationality":
+        return (
+            "Choose the nationality/country-of-citizenship explicitly supported "
+            "by evidence; do not choose birthplace, residence, workplace, or a "
+            "nearby location."
+        )
+    if relation == "date":
+        return (
+            "Choose the date or year explicitly asked for by the question; do "
+            "not choose nearby dates from unrelated events."
+        )
+    if relation == "person":
+        return (
+            "Choose the person relation explicitly asked for by the question; "
+            "do not choose another related person or same-name distractor."
+        )
+    return "Choose the answer explicitly supported by the evidence for this question."
 
 
 def _looks_like_date(answer: str) -> bool:
@@ -286,6 +328,7 @@ def mine_counterfactual_answers(
     use_relation_answer_pool: bool = False,
     use_answer_type_filter: bool = False,
     use_retrieved_distractors: bool = True,
+    hard_aware: bool = False,
 ) -> list[dict]:
     """Mine plausible wrong answers for one replay experience.
 
@@ -297,6 +340,11 @@ def mine_counterfactual_answers(
     answers = list(exp.answers or [])
     question = str(exp.question or "")
     relation = relation_key_for_question(question)
+    evolution_signal = (getattr(exp, "training_targets", {}) or {}).get("evolution_signal", {}) or {}
+    failure_mode = str(evolution_signal.get("failure_mode") or "")
+    hard_generator_failure = hard_aware and failure_mode in {
+        "relation_confusion", "generation_error",
+    }
     candidates: list[dict] = []
     seen: set[str] = set()
 
@@ -312,17 +360,23 @@ def mine_counterfactual_answers(
     if (
         use_model_self_error
         and not verification.get("answer_match", False)
-        and type_ok(self_error)
+        and (type_ok(self_error) or hard_generator_failure)
     ):
         _add_candidate(
             candidates,
             seen,
             self_error,
-            source="model_self_error",
-            negative_type="self_error_answer",
+            source=(
+                "self_evolution_error" if hard_generator_failure
+                else "model_self_error"
+            ),
+            negative_type=(
+                f"{failure_mode}_self_error" if hard_generator_failure
+                else "self_error_answer"
+            ),
             question=question,
             answers=answers,
-            priority=1.2,
+            priority=1.6 if hard_generator_failure else 1.2,
             min_chars=min_negative_chars,
         )
 
@@ -398,12 +452,24 @@ def build_boundary_pairs(
     use_answer_type_filter: bool = False,
     use_retrieved_distractors: bool = True,
     use_counterfactual_evidence: bool = False,
+    hard_aware: bool = False,
+    hard_pair_weight: float = 2.0,
+    skip_retrieval_absent: bool = True,
 ) -> list[dict]:
     """Convert a replay experience into gold-vs-negative boundary pairs."""
 
     positive = _canonical_gold(exp.answers)
     if not positive:
         return []
+    evolution_signal = (getattr(exp, "training_targets", {}) or {}).get("evolution_signal", {}) or {}
+    failure_mode = str(evolution_signal.get("failure_mode") or "")
+    relation = str(evolution_signal.get("relation") or relation_key_for_question(exp.question))
+    if hard_aware and skip_retrieval_absent and failure_mode == "retrieval_absent":
+        return []
+    hard_boundary = hard_aware and failure_mode in {
+        "relation_confusion", "generation_error",
+    }
+    pair_weight = float(hard_pair_weight if hard_boundary else 1.0)
     pairs = []
     for neg in mine_counterfactual_answers(
         exp,
@@ -414,6 +480,7 @@ def build_boundary_pairs(
         use_relation_answer_pool=use_relation_answer_pool,
         use_answer_type_filter=use_answer_type_filter,
         use_retrieved_distractors=use_retrieved_distractors,
+        hard_aware=hard_aware,
     ):
         evidence = neg.get("evidence", "")
         if not evidence and exp.documents:
@@ -429,6 +496,11 @@ def build_boundary_pairs(
             "source": neg["source"],
             "hardness": neg["hardness"],
             "margin": float(margin),
+            "weight": pair_weight,
+            "relation": relation,
+            "relation_hint": relation_guidance(relation),
+            "failure_mode": failure_mode,
+            "evolution_source": evolution_signal.get("source"),
             "evidence_doc_id": neg.get("evidence_doc_id"),
             "evidence": evidence,
         }

@@ -56,6 +56,11 @@ class CABLConfig:
     use_answer_type_filter: bool = False
     use_retrieved_distractors: bool = True
     use_counterfactual_evidence: bool = False
+    # Self-evolution CABL switches. Defaults keep legacy CABL unchanged.
+    hard_aware_enabled: bool = False
+    hard_pair_weight: float = 2.0
+    skip_retrieval_absent: bool = True
+    relation_hint_enabled: bool = True
 
 
 @dataclass

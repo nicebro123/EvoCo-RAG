@@ -171,7 +171,11 @@ def main():
         cabl_use_relation_answer_pool=cfg.cabl.use_relation_answer_pool,
         cabl_use_answer_type_filter=cfg.cabl.use_answer_type_filter,
         cabl_use_retrieved_distractors=cfg.cabl.use_retrieved_distractors,
-        cabl_use_counterfactual_evidence=cfg.cabl.use_counterfactual_evidence)
+        cabl_use_counterfactual_evidence=cfg.cabl.use_counterfactual_evidence,
+        cabl_hard_aware_enabled=cfg.cabl.hard_aware_enabled,
+        cabl_hard_pair_weight=cfg.cabl.hard_pair_weight,
+        cabl_skip_retrieval_absent=cfg.cabl.skip_retrieval_absent,
+        cabl_relation_hint_enabled=cfg.cabl.relation_hint_enabled)
     evaluator = Evaluator(cfg, small_policy, large_auditor, test_samples=test_samples)
 
     trainer = CoevolutionTrainer(cfg, small_policy, large_auditor,

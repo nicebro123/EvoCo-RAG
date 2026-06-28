@@ -48,6 +48,10 @@ class LargeTrainer:
         cabl_use_answer_type_filter: bool = False,
         cabl_use_retrieved_distractors: bool = True,
         cabl_use_counterfactual_evidence: bool = False,
+        cabl_hard_aware_enabled: bool = False,
+        cabl_hard_pair_weight: float = 2.0,
+        cabl_skip_retrieval_absent: bool = True,
+        cabl_relation_hint_enabled: bool = True,
     ):
         self.auditor = auditor
         self.lr = lr
@@ -66,6 +70,10 @@ class LargeTrainer:
         self.cabl_use_answer_type_filter = bool(cabl_use_answer_type_filter)
         self.cabl_use_retrieved_distractors = bool(cabl_use_retrieved_distractors)
         self.cabl_use_counterfactual_evidence = bool(cabl_use_counterfactual_evidence)
+        self.cabl_hard_aware_enabled = bool(cabl_hard_aware_enabled)
+        self.cabl_hard_pair_weight = float(cabl_hard_pair_weight)
+        self.cabl_skip_retrieval_absent = bool(cabl_skip_retrieval_absent)
+        self.cabl_relation_hint_enabled = bool(cabl_relation_hint_enabled)
         self._cabl_answer_pool = None
 
     # ----------------------------------------------------------------- SFT
@@ -107,6 +115,9 @@ class LargeTrainer:
                 use_answer_type_filter=self.cabl_use_answer_type_filter,
                 use_retrieved_distractors=self.cabl_use_retrieved_distractors,
                 use_counterfactual_evidence=self.cabl_use_counterfactual_evidence,
+                hard_aware=self.cabl_hard_aware_enabled,
+                hard_pair_weight=self.cabl_hard_pair_weight,
+                skip_retrieval_absent=self.cabl_skip_retrieval_absent,
             )
         return {"messages": messages, "target": target, "boundary_pairs": boundary_pairs}
 
@@ -184,6 +195,12 @@ class LargeTrainer:
             "Choose the most factually correct short answer.",
             f"Question: {pair.get('question') or ''}",
         ]
+        relation = str(pair.get("relation") or "").strip()
+        relation_hint = str(pair.get("relation_hint") or "").strip()
+        if self.cabl_relation_hint_enabled and relation:
+            parts.append(f"Question relation: {relation}")
+        if self.cabl_relation_hint_enabled and relation_hint:
+            parts.append(f"Relation constraint: {relation_hint}")
         if evidence:
             parts.append(f"Evidence: {evidence}")
         counterfactual_evidence = str(pair.get("counterfactual_evidence") or "").strip()
@@ -198,7 +215,7 @@ class LargeTrainer:
         import torch
         import torch.nn.functional as F
 
-        pair_prompts, positives, negatives, margins = [], [], [], []
+        pair_prompts, positives, negatives, margins, weights = [], [], [], [], []
         for ex in examples:
             for pair in ex.get("boundary_pairs", []) or []:
                 pos = str(pair.get("positive") or "").strip()
@@ -209,6 +226,7 @@ class LargeTrainer:
                 positives.append(pos)
                 negatives.append(neg)
                 margins.append(float(pair.get("margin", self.cabl_margin)))
+                weights.append(max(0.0, float(pair.get("weight", 1.0))))
         if not pair_prompts:
             return None, 0
         all_prompts = pair_prompts + pair_prompts
@@ -225,7 +243,10 @@ class LargeTrainer:
         pos_lp = logprobs[:n]
         neg_lp = logprobs[n:]
         margin = torch.tensor(margins, dtype=pos_lp.dtype, device=pos_lp.device)
-        return F.relu(margin - pos_lp + neg_lp).mean(), n
+        weight = torch.tensor(weights, dtype=pos_lp.dtype, device=pos_lp.device)
+        raw_loss = F.relu(margin - pos_lp + neg_lp)
+        normalizer = weight.sum().clamp_min(1.0)
+        return (raw_loss * weight).sum() / normalizer, n
 
     def train_sft(self, experiences: list, epochs: int = 1, batch_size: int | None = None) -> dict:
         import torch
@@ -257,6 +278,10 @@ class LargeTrainer:
                     "use_answer_type_filter": self.cabl_use_answer_type_filter,
                     "use_retrieved_distractors": self.cabl_use_retrieved_distractors,
                     "use_counterfactual_evidence": self.cabl_use_counterfactual_evidence,
+                    "hard_aware_enabled": self.cabl_hard_aware_enabled,
+                    "hard_pair_weight": self.cabl_hard_pair_weight,
+                    "skip_retrieval_absent": self.cabl_skip_retrieval_absent,
+                    "relation_hint_enabled": self.cabl_relation_hint_enabled,
                 },
             }
 
@@ -341,6 +366,10 @@ class LargeTrainer:
                 "use_answer_type_filter": self.cabl_use_answer_type_filter,
                 "use_retrieved_distractors": self.cabl_use_retrieved_distractors,
                 "use_counterfactual_evidence": self.cabl_use_counterfactual_evidence,
+                "hard_aware_enabled": self.cabl_hard_aware_enabled,
+                "hard_pair_weight": self.cabl_hard_pair_weight,
+                "skip_retrieval_absent": self.cabl_skip_retrieval_absent,
+                "relation_hint_enabled": self.cabl_relation_hint_enabled,
             },
         }
 

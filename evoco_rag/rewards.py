@@ -10,6 +10,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 import re
 
+from .cabl import relation_key_for_question
 from .schemas import (
     Answerability,
     AnswerCorrectness,
@@ -197,6 +198,105 @@ def _docs_containing_answer(sample: RagSample, doc_ids: list[int]) -> list[int]:
     return out
 
 
+def _docs_text_for_ids(sample: RagSample, doc_ids: list[int]) -> str:
+    parts = []
+    for did in doc_ids:
+        doc = sample.doc_by_id(did) or {}
+        text = doc.get("text") or doc.get("raw") or ""
+        if text:
+            parts.append(text)
+    return "\n".join(parts)
+
+
+def _answer_present_in_docs(sample: RagSample, doc_ids: list[int]) -> bool:
+    return bool(_docs_containing_answer(sample, doc_ids))
+
+
+def _wrong_answer_present_in_docs(
+    sample: RagSample,
+    audit: LargeAudit,
+    doc_ids: list[int],
+) -> bool:
+    wrong = str(audit.final_answer or "").strip()
+    if not wrong:
+        return False
+    return exact_presence([wrong], _docs_text_for_ids(sample, doc_ids))
+
+
+def _build_evolution_signal(
+    sample: RagSample,
+    contract: EvidenceContract,
+    audit: LargeAudit,
+    answer_match: bool,
+    support: bool,
+    relevant_pool_ids: list[int],
+    candidate_ids: list[int],
+    selected_ids: list[int],
+) -> dict:
+    """Convert verifier attribution into a self-evolution training signal.
+
+    The signal is deterministic: it does not ask another model to judge the
+    sample. It records which module should learn from the failure so later
+    stages can turn the same replay into retriever supervision or CABL
+    boundary pairs without rewarding the wrong component.
+    """
+
+    relation = relation_key_for_question(sample.question)
+    answer_in_any_doc = bool(relevant_pool_ids)
+    answer_in_candidate_docs = _answer_present_in_docs(sample, candidate_ids)
+    answer_in_selected_evidence = bool(support)
+    wrong_answer_in_candidate_docs = _wrong_answer_present_in_docs(
+        sample, audit, candidate_ids)
+    wrong_answer = str(audit.final_answer or "").strip()
+
+    if answer_match and answer_in_selected_evidence:
+        failure_mode = "success"
+        target_module = "none"
+    elif answer_match and not answer_in_selected_evidence:
+        failure_mode = "parametric_without_support"
+        target_module = "small"
+    elif not answer_in_any_doc:
+        failure_mode = "retrieval_absent"
+        target_module = "data_or_retriever"
+    elif not answer_in_selected_evidence:
+        failure_mode = "rerank_miss"
+        target_module = "small"
+    elif wrong_answer and wrong_answer_in_candidate_docs and relation != "generic":
+        failure_mode = "relation_confusion"
+        target_module = "large"
+    elif answer_in_candidate_docs and not answer_match:
+        failure_mode = "generation_error"
+        target_module = "large"
+    else:
+        failure_mode = "unknown_failure"
+        target_module = "unknown"
+
+    return {
+        "source": "attribution_verifier",
+        "relation": relation,
+        "failure_mode": failure_mode,
+        "target_module": target_module,
+        "hard_sample": failure_mode in {
+            "rerank_miss", "relation_confusion", "generation_error",
+        },
+        "answer_in_any_doc": answer_in_any_doc,
+        "answer_in_candidate_docs": answer_in_candidate_docs,
+        "answer_in_selected_evidence": answer_in_selected_evidence,
+        "wrong_answer_in_candidate_docs": wrong_answer_in_candidate_docs,
+        "model_wrong_answer": wrong_answer if not answer_match else "",
+        "relevant_doc_ids": relevant_pool_ids,
+        "candidate_doc_ids": candidate_ids,
+        "selected_doc_ids": selected_ids,
+        "should_train_retriever": failure_mode in {
+            "rerank_miss", "parametric_without_support",
+        },
+        "should_train_generator_boundary": failure_mode in {
+            "relation_confusion", "generation_error",
+        },
+        "should_skip_generator_boundary": failure_mode == "retrieval_absent",
+    }
+
+
 def _supported_answer_target(sample: RagSample, doc_ids: list[int]) -> dict | None:
     """Build a compact supervised generator target from gold-backed evidence."""
     for did in doc_ids:
@@ -255,6 +355,16 @@ def build_training_targets(
         doc.get("doc_id") for doc in sample.documents if doc.get("doc_id") is not None
     ]
     relevant_pool_ids = _docs_containing_answer(sample, all_doc_ids)
+    evolution_signal = _build_evolution_signal(
+        sample,
+        contract,
+        audit,
+        answer_match,
+        support,
+        relevant_pool_ids,
+        candidate_ids,
+        selected_ids,
+    )
 
     small_positive_doc_ids: list[int] = []
     small_negative_doc_ids: list[int] = []
@@ -332,6 +442,7 @@ def build_training_targets(
         "small_credit_weight": small_credit_weight,
         "large_credit_weight": large_credit_weight,
         "do_not_reward_retriever_reason": do_not_reward_retriever_reason,
+        "evolution_signal": evolution_signal,
         "wrong_retriever_reward_if_answer_only": (
             attribution_case == AttributionCase.PARAMETRIC_ANSWER_WITHOUT_SUPPORT
         ),

@@ -327,3 +327,17 @@ def test_large_trainer_builds_cabl_boundary_pairs_when_enabled():
     assert example["boundary_pairs"][0]["positive"] == "politician"
     assert example["boundary_pairs"][0]["negative"] == "banker"
     assert example["boundary_pairs"][0]["margin"] == 0.7
+
+
+def test_large_trainer_boundary_prompt_includes_relation_hint():
+    trainer = LargeTrainer(SimpleNamespace(), cabl_relation_hint_enabled=True)
+
+    prompt = trainer._boundary_prompt({
+        "question": "What is Ada's place of birth?",
+        "relation": "location",
+        "relation_hint": "Do not choose residence.",
+        "evidence": "Ada was born in London.",
+    })
+
+    assert "Question relation: location" in prompt
+    assert "Relation constraint: Do not choose residence." in prompt

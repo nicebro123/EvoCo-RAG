@@ -113,3 +113,49 @@ def test_cabl_counterfactual_evidence_switch_adds_corrupted_evidence():
     assert pairs[0]["negative"] == "actor"
     assert "counterfactual_evidence" in pairs[0]
     assert "actor" in pairs[0]["counterfactual_evidence"]
+
+
+def test_relation_key_detects_place_of_birth_questions():
+    from evoco_rag.cabl import relation_key_for_question
+
+    assert relation_key_for_question("What is Ada Lovelace's place of birth?") == "location"
+
+
+def test_hard_aware_cabl_weights_self_evolution_pairs():
+    exp = _exp(answer_match=False, final_answer="banker")
+    exp.training_targets = {
+        "evolution_signal": {
+            "source": "attribution_verifier",
+            "relation": "occupation",
+            "failure_mode": "generation_error",
+        }
+    }
+
+    pairs = build_boundary_pairs(
+        exp,
+        hard_aware=True,
+        hard_pair_weight=2.5,
+        max_negatives=1,
+    )
+
+    assert pairs
+    assert pairs[0]["source"] == "self_evolution_error"
+    assert pairs[0]["negative_type"] == "generation_error_self_error"
+    assert pairs[0]["weight"] == 2.5
+    assert pairs[0]["relation"] == "occupation"
+    assert "occupation" in pairs[0]["relation_hint"]
+
+
+def test_hard_aware_cabl_skips_retrieval_absent_samples():
+    exp = _exp(answer_match=False, final_answer="banker")
+    exp.training_targets = {
+        "evolution_signal": {
+            "source": "attribution_verifier",
+            "relation": "occupation",
+            "failure_mode": "retrieval_absent",
+        }
+    }
+
+    pairs = build_boundary_pairs(exp, hard_aware=True, skip_retrieval_absent=True)
+
+    assert pairs == []
