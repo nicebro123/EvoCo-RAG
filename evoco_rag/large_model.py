@@ -297,8 +297,18 @@ class LargeGeneratorAuditor:
             "generator_called": True,
             "generation_candidate_count": len(candidates),
             "extra_audit_called": len(candidates) > 1,
-            "evidence_budget_status": contract.retrieval_action,
-            "evidence_budget_expanded": bool(contract.uncertainty.get("retrieval_expanded")),
+            "requested_action": contract.retrieval_action,
+            "action_executed": (
+                contract.retrieval_action in {"answer_now", "ask_auditor"}
+                or bool(contract.uncertainty.get("retrieval_expanded"))
+            ),
+            "action_fallback": (
+                contract.retrieval_action == "rewrite_query"
+                or (
+                    contract.retrieval_action == "retrieve_more"
+                    and not contract.uncertainty.get("retrieval_expanded")
+                )
+            ),
             "selected_attempt": best["attempt"],
             "selected_candidate_score": best["score"],
             "self_consistency": self_consistency,

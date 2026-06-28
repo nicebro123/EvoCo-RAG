@@ -1,19 +1,19 @@
 project:
-  name: evoco_rag_popqa_fast
+  name: evoco_rag_hparam_cost_top3
   seed: 42
-  output_dir: ../rag_assets/outputs/evoco_popqa_fast
+  output_dir: ../rag_assets/outputs/experiments/hparam_cost_top3
 
 data:
   train_path: ../rag_assets/rag_data/evoco_dataset_pack/datasets/popqa_standard/data_v33/Pop/train_labels_list.json
   test_path: ../rag_assets/rag_data/evoco_dataset_pack/datasets/popqa_standard/data/Pop/test.json
   dataset_name: Pop
-  debug_size: 512
+  debug_size: null
 
 models:
   small_base_path: ../rag_assets/base_models/reranker/bge-reranker-v2-m3
-  large_base_path: ../rag_assets/base_models/generator/Meta-Llama-3-8B-Instruct
-  small_lora_dir: ../rag_assets/checkpoints/evoco_popqa_fast/small
-  large_lora_dir: ../rag_assets/checkpoints/evoco_popqa_fast/large
+  large_base_path: ../rag_assets/base_models/generator/Mistral-Nemo-Instruct-2407
+  small_lora_dir: ../rag_assets/checkpoints/experiments/hparam_cost_top3/small
+  large_lora_dir: ../rag_assets/checkpoints/experiments/hparam_cost_top3/large
   use_4bit: false
 
 contract:
@@ -31,8 +31,8 @@ runtime:
   audit_temperature: 0.7
   max_prompt_length: 2048
   max_completion_length: 512
-  progress_interval: 10
-  replay_flush_interval: 1
+  progress_interval: 50
+  replay_flush_interval: 10
 
 small_policy:
   use_policy_heads: true
@@ -41,7 +41,7 @@ small_policy:
   calibration_loss_weight: 0.2
 
 training:
-  num_rounds: 1
+  num_rounds: 3
   batch_size: 8
   large_batch_size: 2
   small_lr: 5.0e-5

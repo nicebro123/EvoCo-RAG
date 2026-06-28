@@ -5,8 +5,8 @@
 输出：
   - 控制台对比表
   - <metrics_dir>/trends.json 与 trends.csv
-  - <metrics_dir>/trend_metrics.png（accuracy / 证据支持率 / 未支持答案率 / retrieve_more 占比）
-  - <metrics_dir>/trend_training.png（大小模型训练损失与证据预算）
+  - <metrics_dir>/trend_metrics.png（accuracy / 证据支持率 / 未支持答案率 / ask_auditor 占比）
+  - <metrics_dir>/trend_training.png（大小模型训练损失与 head 准确率）
 
 用法:
     python scripts/plot_trends.py --config configs/evoco_popqa.yaml
@@ -64,9 +64,13 @@ def collect_trends(metrics_dir: str) -> list[dict]:
             "round": stats.get("round", int(m.group(1))),
             "eval_source": stats.get("eval_source", "unknown"),
             "num_eval_examples": eval_m.get("num_examples"),
+            "ask_auditor_ratio": _action_ratio(action_dist, "ask_auditor"),
             "answer_now_ratio": _action_ratio(action_dist, "answer_now"),
             "retrieve_more_ratio": _action_ratio(action_dist, "retrieve_more"),
             "small_avg_loss": small.get("avg_loss"),
+            "small_action_accuracy": small.get("action_accuracy"),
+            "small_evidence_accuracy": small.get("evidence_accuracy"),
+            "small_calibration_ece": small.get("calibration_ece"),
             "large_avg_loss": large.get("avg_loss"),
             "total_round_seconds": timing.get("total_round_seconds"),
         }
@@ -88,7 +92,7 @@ def _fmt(v):
 def print_table(rows: list[dict]) -> None:
     cols = ["round", "eval_source", "accuracy", "evidence_support_rate",
             "unsupported_answer_rate", "citation_correctness", "mrr",
-            "retrieve_more_ratio", "avg_total_cost_penalty"]
+            "ask_auditor_ratio", "avg_total_cost_penalty"]
     header = "".join(f"{c:>24}" if c != "round" else f"{c:>6}" for c in cols)
     print(header)
     for r in rows:
@@ -124,7 +128,7 @@ def plot_metrics(rows: list[dict], out_path: str) -> bool:
         ("accuracy", "Test accuracy (%)"),
         ("evidence_support_rate", "Evidence support rate"),
         ("unsupported_answer_rate", "Unsupported-answer rate"),
-        ("retrieve_more_ratio", "retrieve_more evidence-budget ratio"),
+        ("ask_auditor_ratio", "ask_auditor action ratio"),
     ]
     fig, axes = plt.subplots(2, 2, figsize=(11, 7))
     for ax, (key, title) in zip(axes.flat, panels):
@@ -159,12 +163,13 @@ def plot_training(rows: list[dict], out_path: str) -> bool:
     ax1.legend()
     ax1.grid(True, alpha=0.3)
 
-    for key, label in [("retrieve_more_ratio", "retrieve_more ratio"),
-                       ("avg_selected_docs", "avg selected docs")]:
+    for key, label in [("small_action_accuracy", "action acc"),
+                       ("small_evidence_accuracy", "evidence acc"),
+                       ("small_calibration_ece", "head ECE")]:
         xs, ys = _series(rows, key)
         if xs:
             ax2.plot(xs, ys, marker="o", label=label)
-    ax2.set_title("Evidence budget")
+    ax2.set_title("Small-model policy heads")
     ax2.set_xlabel("round")
     ax2.legend()
     ax2.grid(True, alpha=0.3)

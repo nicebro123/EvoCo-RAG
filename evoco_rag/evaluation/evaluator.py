@@ -65,9 +65,16 @@ class Evaluator:
         return metrics
 
     def _candidate_counts(self, contracts) -> list[int]:
+        from ..schemas import RetrievalAction
+
         audit_candidates = max(
             1, int(getattr(self.cfg.runtime, "num_audit_candidates", 1)))
-        return [audit_candidates for _ in contracts]
+        return [
+            audit_candidates
+            if contract.retrieval_action == RetrievalAction.ASK_AUDITOR
+            else 1
+            for contract in contracts
+        ]
 
     @staticmethod
     def _append_predictions(path: str, records: list) -> None:
@@ -84,7 +91,7 @@ class Evaluator:
         """测试集推理：gold answers 不可见（show_gold=False）。"""
         from ..verifier import verify
         from ..rewards import build_training_targets, compute_decomposed_reward
-        from ..schemas import ReplayExperience
+        from ..schemas import ReplayExperience, RetrievalAction
 
         samples = list(test_samples)
         contracts = []
@@ -94,8 +101,10 @@ class Evaluator:
                 high_conf_threshold=self.cfg.contract.high_conf_threshold,
                 answer_now_margin=self.cfg.contract.answer_now_margin,
                 max_selected_docs=self.cfg.contract.max_selected_docs,
-                retrieve_more_conf_threshold=self.cfg.contract.retrieve_more_conf_threshold,
-                retrieve_more_margin_threshold=self.cfg.contract.retrieve_more_margin_threshold)
+                action_mode=self.cfg.contract.action_mode,
+                policy_action_min_conf=self.cfg.contract.policy_action_min_conf)
+            if not self.cfg.ablation.use_action_policy:
+                contract.retrieval_action = RetrievalAction.ANSWER_NOW
             contracts.append(contract)
 
         records = []

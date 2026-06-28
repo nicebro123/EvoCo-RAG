@@ -17,6 +17,12 @@ def _trainer(tmp_path, **ablation):
     return CoevolutionTrainer(cfg, None, None)
 
 
+def test_no_action_policy_forces_answer_now(tmp_path):
+    trainer = _trainer(tmp_path, use_action_policy=False)
+    e = trainer.make_experience(make_sample(), round_id=0)
+    assert e.contract["retrieval_action"] == "answer_now"
+
+
 def test_answer_only_reward_has_no_support_component(tmp_path):
     trainer = _trainer(tmp_path, use_decomposed_reward=False)
     e = trainer.make_experience(make_sample(), round_id=0)

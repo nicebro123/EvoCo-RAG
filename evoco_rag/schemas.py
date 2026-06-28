@@ -26,7 +26,9 @@ class Answerability:
 class RetrievalAction:
     ANSWER_NOW = "answer_now"
     RETRIEVE_MORE = "retrieve_more"
-    ALL = {ANSWER_NOW, RETRIEVE_MORE}
+    REWRITE_QUERY = "rewrite_query"
+    ASK_AUDITOR = "ask_auditor"
+    ALL = {ANSWER_NOW, RETRIEVE_MORE, REWRITE_QUERY, ASK_AUDITOR}
 
 
 class AnswerCorrectness:

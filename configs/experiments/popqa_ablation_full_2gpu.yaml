@@ -1,8 +1,7 @@
 # Full PopQA ablation study for the paper's main mechanism table.
 #
 # This study keeps the PopQA full split and 3 training rounds, then disables one
-# EvoCo-RAG component at a time. The small model is a reranker; action-policy
-# and policy-head ablations are intentionally not part of the mainline matrix.
+# EvoCo-RAG component at a time. Use it after the fast sweeps look stable.
 #
 # Generate local dataset configs first:
 #   python scripts/make_dataset_config.py --data-root ../rag_assets/rag_data/evoco_dataset_pack --all --full --output-root configs/local
@@ -44,6 +43,15 @@ experiments:
       ablation.use_evidence_audit: false
       runtime.num_audit_candidates: 1
 
+  - name: no_action_policy
+    overrides:
+      ablation.use_action_policy: false
+
+  - name: no_policy_heads
+    overrides:
+      small_policy.use_policy_heads: false
+      contract.action_mode: heuristic
+
   - name: small_only
     overrides:
       ablation.train_large_lora: false
@@ -52,9 +60,12 @@ experiments:
     overrides:
       ablation.train_small_lora: false
 
-  - name: baseline_no_audit_answer_only
+  - name: baseline_current_corag
     overrides:
       ablation.use_evidence_audit: false
+      ablation.use_action_policy: false
       ablation.use_decomposed_reward: false
       ablation.train_large_lora: false
+      small_policy.use_policy_heads: false
+      contract.action_mode: heuristic
       runtime.num_audit_candidates: 1

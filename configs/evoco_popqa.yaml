@@ -21,6 +21,8 @@ contract:
   high_conf_threshold: 0.75
   answer_now_margin: 0.15
   max_selected_docs: 5
+  action_mode: heuristic
+  policy_action_min_conf: 0.45
 
 runtime:
   candidate_doc_char_limit: 1200
@@ -33,7 +35,10 @@ runtime:
   replay_flush_interval: 10
 
 small_policy:
+  use_policy_heads: false   # ECR-1: 默认关闭；开启后训练 evidence/action/confidence heads
   evidence_loss_weight: 1.0
+  action_loss_weight: 0.5
+  calibration_loss_weight: 0.2
 
 training:
   num_rounds: 3
@@ -50,10 +55,12 @@ reward:
   selected_doc_cost: 0.05
   retrieval_round_cost: 0.1
   audit_call_cost: 0.1
+  rewrite_cost: 0.1
   retrieve_more_cost: 0.1
 
 ablation:
   use_evidence_audit: true
+  use_action_policy: true
   use_decomposed_reward: true
   train_small_lora: true
   train_large_lora: true

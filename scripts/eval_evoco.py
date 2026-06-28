@@ -38,7 +38,8 @@ def main():
     print(f"eval large LoRA: {large_lora or 'none'}")
 
     small_policy = SmallRagPolicy(base_path=cfg.models.small_base_path,
-                                  lora_dir=small_lora, use_lora=False)
+                                  lora_dir=small_lora, use_lora=False,
+                                  use_policy_heads=cfg.small_policy.use_policy_heads)
     large_auditor = LargeGeneratorAuditor(base_path=cfg.models.large_base_path,
                                           lora_dir=large_lora, use_lora=False,
                                           use_4bit=cfg.models.use_4bit,

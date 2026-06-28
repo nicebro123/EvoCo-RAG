@@ -67,9 +67,7 @@ def test_answer_false_support_true():
     assert t["large_sft_eligible"] is True
     assert t["large_sft_target"]["final_answer"] == "politician"
     assert t["large_sft_target"]["used_doc_ids"] == [0]
-    # Retriever supplied supporting evidence; the generator error should train
-    # the large model while keeping reranker supervision evidence-only.
-    assert set(t) >= {"small_positive_doc_ids", "small_negative_doc_ids"}
+    assert t["small_action_target"] == RetrievalAction.ASK_AUDITOR
     assert t["attribution_case"] == AttributionCase.RETRIEVER_SUCCESS_GENERATOR_FAIL
     assert t["small_credit_weight"] == 1.0
 
@@ -80,6 +78,9 @@ def test_answer_false_support_false():
     assert v.support_rule_passed is False
     assert 0 in t["small_positive_doc_ids"]
     assert 1 in t["small_negative_doc_ids"]
+    # With no extra candidate documents, retrieve_more would be a no-op; teach
+    # the small policy to ask for extra audit/generation instead.
+    assert t["small_action_target"] == RetrievalAction.ASK_AUDITOR
     assert t["attribution_case"] == AttributionCase.BOTH_FAIL
 
 
@@ -109,7 +110,7 @@ def test_audit_cost_uses_actual_extra_candidate_count():
     assert reward.action_cost_penalty == 0.2
 
 
-def test_training_targets_keep_reranker_supervision_evidence_only():
+def test_action_target_retrieve_more_only_when_extra_docs_exist():
     sample = make_sample()
     sample.documents.append({
         "doc_id": 2,
@@ -126,5 +127,4 @@ def test_training_targets_keep_reranker_supervision_evidence_only():
     verification = verify(sample, contract, audit, json_valid=True)
     reward = compute_decomposed_reward(sample, contract, audit, verification)
     targets = build_training_targets(sample, contract, audit, verification, reward)
-    assert targets["small_target_source"] == "gold_rule_verifier"
-    assert set(targets["small_negative_doc_ids"]) == {1}
+    assert targets["small_action_target"] == RetrievalAction.RETRIEVE_MORE

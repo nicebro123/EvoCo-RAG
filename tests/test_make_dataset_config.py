@@ -83,7 +83,7 @@ def test_make_dataset_config_resolves_rag_data_layout(tmp_path):
     assert str(data_root / "datasets" / "alpha" / "data_v33" / "Pop" / "train_labels_list.json") in text
 
 
-def test_make_dataset_config_resolves_asset_sibling_hint(tmp_path):
+def test_make_dataset_config_resolves_legacy_sibling_hint(tmp_path):
     asset_root = tmp_path / "rag_assets"
     data_root = asset_root / "rag_data" / "evoco_dataset_pack"
     _write_pack(data_root)

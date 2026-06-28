@@ -1,10 +1,8 @@
-"""Evidence contract builder.
+"""证据合约构造器（开发文档 §4 实现说明、§5.4）。
 
-The small model is a reranker.  This module converts ranked documents into a
-structured evidence contract for the large generator/auditor.  The only
-adaptive behaviour kept in the mainline is evidence-budget expansion
-(``retrieve_more``) when the ranking signal is weak and more candidate
-documents are available.
+第一阶段不引入新的可训练参数：输入小模型对候选文档的打分，用启发式规则
+封装出 EvidenceContract——选 top-k、用 sigmoid 把分数转成置信度、句子级
+启发式抽 span、按分数 margin 与阈值决定 retrieval_action。
 """
 
 from __future__ import annotations
@@ -15,6 +13,9 @@ from .schemas import Answerability, EvidenceContract, EvidenceItem, RetrievalAct
 from .text_utils import best_evidence_span
 
 
+ACTION_MODES = {"heuristic", "policy", "hybrid"}
+
+
 def _sigmoid(x: float) -> float:
     if x >= 0:
         return 1.0 / (1.0 + math.exp(-x))
@@ -22,35 +23,97 @@ def _sigmoid(x: float) -> float:
     return z / (1.0 + z)
 
 
-def _decide_budget_status(
-    top1_conf: float,
-    margin: float,
-    high_conf_threshold: float,
-    answer_now_margin: float,
-    can_retrieve_more: bool = False,
-    retrieve_more_conf_threshold: float | None = None,
-    retrieve_more_margin_threshold: float | None = None,
-) -> tuple[str, str]:
-    """Return ``(retrieval_action, answerability)`` for evidence budgeting.
-
-    ``ANSWER_NOW`` means the current top-k evidence window is used as-is.
-    ``RETRIEVE_MORE`` means the reranker signal is weak enough to expand the
-    evidence window.  There is no "ask auditor" decision here; the auditor is
-    part of the normal RAG pipeline.
-    """
+def _decide_action(top1_conf: float, margin: float, high_conf_threshold: float,
+                   answer_now_margin: float, entity_ambiguity: bool) -> tuple[str, str]:
+    """启发式动作策略，返回 (action, answerability)。"""
     if top1_conf >= high_conf_threshold and margin >= answer_now_margin:
         return RetrievalAction.ANSWER_NOW, Answerability.HIGH
-    if (
-        can_retrieve_more
-        and retrieve_more_conf_threshold is not None
-        and retrieve_more_margin_threshold is not None
-        and top1_conf < retrieve_more_conf_threshold
-        and margin < retrieve_more_margin_threshold
-    ):
-        return RetrievalAction.RETRIEVE_MORE, Answerability.LOW
-    if can_retrieve_more and top1_conf < high_conf_threshold * 0.6:
+    if entity_ambiguity and margin < answer_now_margin:
+        return RetrievalAction.ASK_AUDITOR, Answerability.MEDIUM
+    if top1_conf < high_conf_threshold * 0.6:
         return RetrievalAction.RETRIEVE_MORE, Answerability.LOW
     return RetrievalAction.ANSWER_NOW, Answerability.MEDIUM
+
+
+def _answerability_for_action(action: str, top1_conf: float, high_conf_threshold: float) -> str:
+    if action == RetrievalAction.ANSWER_NOW and top1_conf >= high_conf_threshold:
+        return Answerability.HIGH
+    if action == RetrievalAction.RETRIEVE_MORE:
+        return Answerability.LOW
+    return Answerability.MEDIUM
+
+
+def _available_actions(num_ranked_docs: int, top_k: int) -> set[str]:
+    """Actions the environment can actually execute for this sample.
+
+    ``retrieve_more`` is only meaningful when the sample has documents beyond
+    the current top-k window. Otherwise it becomes a no-op and pollutes the
+    action-policy signal, so we mask it out before resolving policy actions.
+    """
+    actions = {RetrievalAction.ANSWER_NOW, RetrievalAction.ASK_AUDITOR}
+    if num_ranked_docs > top_k:
+        actions.add(RetrievalAction.RETRIEVE_MORE)
+    return actions
+
+
+def _fallback_executable_action(
+    action: str,
+    heuristic_action: str,
+    available_actions: set[str],
+) -> str:
+    if action in available_actions:
+        return action
+    # Preserve the executable heuristic first. In particular, a masked
+    # retrieve_more on an uncertain example should ask the auditor when the
+    # heuristic also indicates uncertainty, instead of forcing answer_now.
+    if heuristic_action in available_actions:
+        return heuristic_action
+    if (
+        action == RetrievalAction.RETRIEVE_MORE
+        and RetrievalAction.ASK_AUDITOR in available_actions
+    ):
+        return RetrievalAction.ASK_AUDITOR
+    if RetrievalAction.ANSWER_NOW in available_actions:
+        return RetrievalAction.ANSWER_NOW
+    return RetrievalAction.ASK_AUDITOR
+
+
+def _resolve_action(
+    heuristic_action: str,
+    heuristic_answerability: str,
+    top1_conf: float,
+    high_conf_threshold: float,
+    action_mode: str,
+    policy_action: str | None,
+    policy_action_confidence: float | None,
+    policy_action_min_conf: float,
+    available_actions: set[str] | None = None,
+) -> tuple[str, str, bool, bool]:
+    if action_mode not in ACTION_MODES:
+        raise ValueError(f"非法 action_mode={action_mode!r}，允许值: {sorted(ACTION_MODES)}")
+    available = available_actions or set(RetrievalAction.ALL)
+    executable_heuristic = _fallback_executable_action(
+        heuristic_action, heuristic_action, available)
+    mask_applied = executable_heuristic != heuristic_action
+
+    if action_mode == "heuristic" or policy_action not in RetrievalAction.ALL:
+        return executable_heuristic, _answerability_for_action(
+            executable_heuristic, top1_conf, high_conf_threshold), False, mask_applied
+    if action_mode == "hybrid" and (
+        policy_action_confidence is None or policy_action_confidence < policy_action_min_conf
+    ):
+        return executable_heuristic, _answerability_for_action(
+            executable_heuristic, top1_conf, high_conf_threshold), False, mask_applied
+
+    executable_policy = _fallback_executable_action(
+        policy_action, executable_heuristic, available)
+    mask_applied = mask_applied or executable_policy != policy_action
+    return (
+        executable_policy,
+        _answerability_for_action(executable_policy, top1_conf, high_conf_threshold),
+        executable_policy == policy_action,
+        mask_applied,
+    )
 
 
 def build_contract(
@@ -62,28 +125,44 @@ def build_contract(
     answer_now_margin: float = 0.15,
     max_selected_docs: int = 3,
     num_retrieval_rounds: int = 1,
-    retrieve_more_conf_threshold: float | None = None,
-    retrieve_more_margin_threshold: float | None = None,
+    action_mode: str = "heuristic",
+    policy_action: str | None = None,
+    policy_action_confidence: float | None = None,
+    policy_action_min_conf: float = 0.45,
 ) -> EvidenceContract:
-    """Package reranker scores as an evidence contract.
+    """把打分结果封装成证据合约。
 
-    The mainline system is reranker -> evidence contract -> large generator/auditor.
+    ranked_docs: 已按分数降序排列的 [{doc_id, score}], 通常来自 SmallRagPolicy.rank_documents。
     """
     ranked = sorted(ranked_docs, key=lambda d: d["score"], reverse=True)
     topk = ranked[:top_k]
 
-    confidences = [float(_sigmoid(d["score"])) for d in topk]
+    # Prefer the trainable calibration head when available. Falling back to a
+    # sigmoid of the reranker logit keeps legacy/no-head configs compatible.
+    confidences = [
+        float(d.get("policy_confidence", _sigmoid(d["score"])))
+        for d in topk
+    ]
     top1_conf = confidences[0] if confidences else 0.0
     margin = (confidences[0] - confidences[1]) if len(confidences) >= 2 else top1_conf
-    can_retrieve_more = len(ranked) > top_k
-    retrieval_action, answerability = _decide_budget_status(
+
+    # 简单实体歧义启发：top1/top2 置信度接近视为可能歧义
+    entity_ambiguity = len(confidences) >= 2 and abs(confidences[0] - confidences[1]) < 0.05
+
+    heuristic_action, heuristic_answerability = _decide_action(
+        top1_conf, margin, high_conf_threshold, answer_now_margin, entity_ambiguity
+    )
+    available_actions = _available_actions(len(ranked), top_k)
+    action, answerability, policy_action_used, action_mask_applied = _resolve_action(
+        heuristic_action,
+        heuristic_answerability,
         top1_conf,
-        margin,
         high_conf_threshold,
-        answer_now_margin,
-        can_retrieve_more=can_retrieve_more,
-        retrieve_more_conf_threshold=retrieve_more_conf_threshold,
-        retrieve_more_margin_threshold=retrieve_more_margin_threshold,
+        action_mode,
+        policy_action,
+        policy_action_confidence,
+        policy_action_min_conf,
+        available_actions,
     )
 
     selected = []
@@ -93,14 +172,16 @@ def build_contract(
         doc_obj = sample.doc_by_id(doc["doc_id"]) or {}
         text = doc_obj.get("text") or doc_obj.get("raw") or ""
         span, overlap = best_evidence_span(sample.question, text)
+        evidence_conf = doc.get("evidence_confidence", overlap)
         selected.append(EvidenceItem(
             doc_id=doc["doc_id"],
             rank=rank,
             doc_score=round(float(doc["score"]), 4),
             relevance_confidence=round(conf, 4),
-            evidence_confidence=round(float(doc.get("evidence_confidence", overlap)), 4),
+            evidence_confidence=round(float(evidence_conf), 4),
             span=span,
-            reason="启发式：与问题词汇重叠最高的句子" if span else "",
+            reason=("policy_head" if "evidence_confidence" in doc
+                    else "启发式：与问题词汇重叠最高的句子") if span else "",
         ))
 
     candidate_docs = [
@@ -108,6 +189,10 @@ def build_contract(
             "doc_id": d["doc_id"],
             "rank": i + 1,
             "doc_score": round(float(d["score"]), 4),
+            **({"evidence_confidence": round(float(d["evidence_confidence"]), 4)}
+               if "evidence_confidence" in d else {}),
+            **({"policy_confidence": round(float(d["policy_confidence"]), 4)}
+               if "policy_confidence" in d else {}),
         }
         for i, d in enumerate(ranked[:top_k])
     ]
@@ -117,18 +202,24 @@ def build_contract(
         round=round_id,
         question=sample.question,
         answerability=answerability,
-        retrieval_action=retrieval_action,
+        retrieval_action=action,
         selected_evidence=selected,
         candidate_docs=candidate_docs,
         uncertainty={
-            "evidence_budget_policy": "reranker_confidence",
-            "top1_confidence": round(top1_conf, 4),
-            "rank_margin": round(margin, 4),
-            "can_retrieve_more": can_retrieve_more,
+            "action_mode": action_mode,
+            "heuristic_action": heuristic_action,
+            "heuristic_answerability": heuristic_answerability,
+            "policy_action": policy_action,
+            "policy_action_confidence": (
+                round(float(policy_action_confidence), 4)
+                if policy_action_confidence is not None else None
+            ),
+            "policy_action_used": policy_action_used,
+            "action_mask_applied": action_mask_applied,
+            "available_actions": sorted(available_actions),
+            "entity_ambiguity": entity_ambiguity,
             "evidence_conflict": False,
             "missing_relation": top1_conf < high_conf_threshold * 0.6,
-            "retrieve_more_conf_threshold": retrieve_more_conf_threshold,
-            "retrieve_more_margin_threshold": retrieve_more_margin_threshold,
         },
         cost={
             "num_ranked_docs": len(ranked),

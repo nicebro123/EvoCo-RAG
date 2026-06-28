@@ -11,7 +11,7 @@ plot_trends = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(plot_trends)
 
 
-def _round_stats(round_id, accuracy, retrieve_more, support_rate):
+def _round_stats(round_id, accuracy, ask_auditor, support_rate):
     return {
         "round": round_id,
         "eval_source": "test_generalization",
@@ -23,10 +23,11 @@ def _round_stats(round_id, accuracy, retrieve_more, support_rate):
             "citation_correctness": 0.7,
             "mrr": 0.8,
             "avg_total_cost_penalty": 0.3,
-            "action_distribution": {"answer_now": 100 - retrieve_more,
-                                    "retrieve_more": retrieve_more},
+            "action_distribution": {"answer_now": 100 - ask_auditor,
+                                    "ask_auditor": ask_auditor, "retrieve_more": 0},
         },
-        "small": {"avg_loss": 1.5},
+        "small": {"avg_loss": 1.5, "action_accuracy": 0.6, "evidence_accuracy": 0.61,
+                  "calibration_ece": 0.16},
         "large": {"avg_loss": 0.12},
         "timing": {"total_round_seconds": 100.0},
     }
@@ -39,9 +40,9 @@ def _write_round(metrics_dir, stats):
 
 
 def test_action_ratio():
-    assert plot_trends._action_ratio({"answer_now": 3, "retrieve_more": 1}, "retrieve_more") == 0.25
-    assert plot_trends._action_ratio({}, "retrieve_more") is None
-    assert plot_trends._action_ratio({"answer_now": 0}, "retrieve_more") is None
+    assert plot_trends._action_ratio({"answer_now": 3, "ask_auditor": 1}, "ask_auditor") == 0.25
+    assert plot_trends._action_ratio({}, "ask_auditor") is None
+    assert plot_trends._action_ratio({"answer_now": 0}, "ask_auditor") is None
 
 
 def test_collect_trends_sorted_and_extracted(tmp_path):
@@ -58,8 +59,8 @@ def test_collect_trends_sorted_and_extracted(tmp_path):
     assert [r["round"] for r in rows] == [0, 1]
     assert rows[0]["accuracy"] == 60.0
     assert rows[1]["accuracy"] == 70.0
-    assert rows[0]["retrieve_more_ratio"] == 0.4
-    assert rows[1]["retrieve_more_ratio"] == 0.2
+    assert rows[0]["ask_auditor_ratio"] == 0.4
+    assert rows[1]["ask_auditor_ratio"] == 0.2
     assert rows[0]["eval_source"] == "test_generalization"
 
 

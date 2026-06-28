@@ -104,7 +104,10 @@ def compute_metrics(experiences: Iterable) -> dict:
         except (TypeError, ValueError):
             candidate_count = 0
         candidate_counts.append(candidate_count)
-        audit_calls.append(1.0 if meta.get("extra_audit_called") else 0.0)
+        if "extra_audit_called" in meta:
+            audit_calls.append(1.0 if meta.get("extra_audit_called") else 0.0)
+        else:
+            audit_calls.append(1.0 if c.get("retrieval_action") == "ask_auditor" else 0.0)
         empty_answers.append(1.0 if not str(a.get("final_answer") or "").strip() else 0.0)
         action_fallbacks.append(1.0 if meta.get("action_fallback") else 0.0)
         cost_penalties.append(r.get("cost_penalty", 0.0))

@@ -1,19 +1,19 @@
 project:
-  name: evoco_rag_popqa_fast
+  name: evoco_rag_two_h20_smoke
   seed: 42
-  output_dir: ../rag_assets/outputs/evoco_popqa_fast
+  output_dir: ../rag_assets/outputs/experiments/two_h20_smoke
 
 data:
   train_path: ../rag_assets/rag_data/evoco_dataset_pack/datasets/popqa_standard/data_v33/Pop/train_labels_list.json
   test_path: ../rag_assets/rag_data/evoco_dataset_pack/datasets/popqa_standard/data/Pop/test.json
   dataset_name: Pop
-  debug_size: 512
+  debug_size: 128
 
 models:
   small_base_path: ../rag_assets/base_models/reranker/bge-reranker-v2-m3
-  large_base_path: ../rag_assets/base_models/generator/Meta-Llama-3-8B-Instruct
-  small_lora_dir: ../rag_assets/checkpoints/evoco_popqa_fast/small
-  large_lora_dir: ../rag_assets/checkpoints/evoco_popqa_fast/large
+  large_base_path: ../rag_assets/base_models/generator/Mistral-Nemo-Instruct-2407
+  small_lora_dir: ../rag_assets/checkpoints/experiments/two_h20_smoke/small
+  large_lora_dir: ../rag_assets/checkpoints/experiments/two_h20_smoke/large
   use_4bit: false
 
 contract:

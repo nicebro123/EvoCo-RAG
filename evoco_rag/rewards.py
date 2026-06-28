@@ -36,6 +36,7 @@ class RewardWeights:
     selected_doc_cost: float = 0.05
     retrieval_round_cost: float = 0.1
     audit_call_cost: float = 0.1
+    rewrite_cost: float = 0.1
     retrieve_more_cost: float = 0.1
 
 
@@ -64,6 +65,54 @@ def _predicted_confidence_bucket(contract: EvidenceContract) -> str:
         if top_conf <= 0.35:
             return "low"
     return "medium"
+
+
+def _can_retrieve_more(sample: RagSample, contract: EvidenceContract) -> bool:
+    current_window = max(
+        len(contract.candidate_docs),
+        int(contract.cost.get("num_selected_docs", 0) or 0),
+    )
+    return len(sample.documents) > current_window
+
+
+def _contract_difficulty_signal(contract: EvidenceContract) -> bool:
+    uncertainty = contract.uncertainty or {}
+    if contract.answerability != Answerability.HIGH:
+        return True
+    if uncertainty.get("entity_ambiguity") or uncertainty.get("evidence_conflict"):
+        return True
+    confidences = [e.relevance_confidence for e in contract.selected_evidence]
+    if len(confidences) >= 2 and abs(confidences[0] - confidences[1]) < 0.08:
+        return True
+    if confidences and max(confidences) < 0.75:
+        return True
+    return False
+
+
+def _small_action_target(
+    sample: RagSample,
+    contract: EvidenceContract,
+    answer_match: bool,
+    support: bool,
+) -> str:
+    """Difficulty-aware action supervision for the small policy head.
+
+    Prefer executable actions. ``retrieve_more`` is only a target when the
+    sample actually has documents outside the current candidate window. When
+    retrieval cannot expand, unsupported or difficult examples become
+    ``ask_auditor`` targets instead of teaching a no-op action.
+    """
+    can_retrieve = _can_retrieve_more(sample, contract)
+    difficult = _contract_difficulty_signal(contract)
+    if support and answer_match and not difficult:
+        return RetrievalAction.ANSWER_NOW
+    if not support and can_retrieve:
+        return RetrievalAction.RETRIEVE_MORE
+    if not support:
+        return RetrievalAction.ASK_AUDITOR
+    if not answer_match:
+        return RetrievalAction.ASK_AUDITOR
+    return RetrievalAction.ASK_AUDITOR if difficult else RetrievalAction.ANSWER_NOW
 
 
 def compute_decomposed_reward(
@@ -109,6 +158,11 @@ def compute_decomposed_reward(
     extra_audit_candidates = max(0, candidate_count - 1)
     if extra_audit_candidates:
         action_cost_penalty += w.audit_call_cost * extra_audit_candidates
+    elif contract.retrieval_action == RetrievalAction.ASK_AUDITOR:
+        # Compatibility for old replay records without execution metadata.
+        action_cost_penalty += w.audit_call_cost
+    elif contract.retrieval_action == RetrievalAction.REWRITE_QUERY:
+        action_cost_penalty += w.rewrite_cost
     elif contract.retrieval_action == RetrievalAction.RETRIEVE_MORE:
         action_cost_penalty += w.retrieve_more_cost
     cost_penalty = (
@@ -186,7 +240,7 @@ def build_training_targets(
 
     | answer | support | 小模型               | 大模型                |
     |--------|---------|----------------------|-----------------------|
-    | T      | T       | 正:含答案选中文档    | SFT 正样本            |
+    | T      | T       | 正:含答案选中文档    | SFT/GRPO 正样本       |
     | T      | F       | 真文档正例/误选负例   | 不训练无证据答案      |
     | F      | T       | 正:含答案选中文档    | 低 reward / SFT 修正  |
     | F      | F       | 漏排正例/误选负例     | 无支持则丢弃          |
@@ -237,6 +291,10 @@ def build_training_targets(
             failure_type = FailureType.UNSUPPORTED_ANSWER
             do_not_reward_retriever_reason = "parametric_answer_without_support"
 
+    # 小模型动作 target：用可执行动作 + 困难感知信号，避免把 no-op 的
+    # retrieve_more 或纯后验的 generator failure 当作唯一监督。
+    small_action_target = _small_action_target(sample, contract, answer_match, support)
+
     # 大模型学习由规则验证过的证据监督目标，而不是复制自己的审计输出。
     # 这同时为“检索正确、生成错误”的样本提供明确纠错信号。
     large_sft_target = (
@@ -262,11 +320,13 @@ def build_training_targets(
     return {
         "small_positive_doc_ids": small_positive_doc_ids,
         "small_negative_doc_ids": small_negative_doc_ids,
+        "small_action_target": small_action_target,
         "small_target_source": "gold_rule_verifier",
         "large_sft_eligible": large_sft_eligible,
         "large_sft_target": large_sft_target,
         "large_sft_target_source": "gold_supported_evidence" if large_sft_target else None,
         "evaluation_only": not include_supervised_targets,
+        "large_grpo_reward": reward.total_reward,
         "failure_type": failure_type,
         "attribution_case": attribution_case,
         "small_credit_weight": small_credit_weight,

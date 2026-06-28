@@ -1,7 +1,7 @@
 """消融实验跑批（开发文档 §7.2 实验矩阵）。
 
 对同一份数据，按不同 ablation 配置依次跑协同进化，汇总各实验最终指标，便于
-对比"审计 / reward 拆解 / 单边训练"各自的贡献。
+对比"审计 / 动态 action / reward 拆解 / 单边训练"各自的贡献。
 
 每个实验单独加载模型和 LoRA，避免不同消融实验互相污染 adapter 状态。
 
@@ -27,9 +27,10 @@ from evoco_rag.weights import prepare_weight_layout
 
 # 实验矩阵：每项是对 ablation 字段的覆盖（未列字段保持 True）
 EXPERIMENTS = {
-    "baseline_no_audit_answer_only": dict(use_evidence_audit=False,
-                                          use_decomposed_reward=False),
+    "baseline_current_corag": dict(use_evidence_audit=False, use_action_policy=False,
+                                   use_decomposed_reward=False),
     "evoco_no_audit":        dict(use_evidence_audit=False),
+    "evoco_no_action":       dict(use_action_policy=False),
     "evoco_answer_only_reward": dict(use_decomposed_reward=False),
     "evoco_small_only":      dict(train_large_lora=False),
     "evoco_large_only":      dict(train_small_lora=False),
@@ -99,7 +100,8 @@ def main():
             from evoco_rag.trainers.small_trainer import SmallTrainer
             small_policy = SmallRagPolicy(
                 cfg.models.small_base_path,
-                use_lora=True)
+                use_lora=True,
+                use_policy_heads=cfg.small_policy.use_policy_heads)
             large_auditor = LargeGeneratorAuditor(cfg.models.large_base_path, use_lora=True,
                                                   use_4bit=cfg.models.use_4bit,
                                                   max_prompt_length=cfg.runtime.max_prompt_length,
@@ -112,7 +114,9 @@ def main():
                 small_policy,
                 lr=cfg.training.small_lr,
                 batch_size=cfg.training.batch_size,
-                evidence_loss_weight=cfg.small_policy.evidence_loss_weight)
+                evidence_loss_weight=cfg.small_policy.evidence_loss_weight,
+                action_loss_weight=cfg.small_policy.action_loss_weight,
+                calibration_loss_weight=cfg.small_policy.calibration_loss_weight)
             large_trainer = LargeTrainer(
                 large_auditor,
                 lr=cfg.training.large_lr,

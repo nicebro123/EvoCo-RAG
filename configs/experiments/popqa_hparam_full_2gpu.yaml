@@ -71,6 +71,28 @@ experiments:
       runtime.max_prompt_length: 3072
       runtime.max_completion_length: 1024
 
+  - name: action_conf_035_top5
+    overrides:
+      contract.top_k: 5
+      contract.max_selected_docs: 5
+      contract.policy_action_min_conf: 0.35
+      runtime.candidate_doc_char_limit: 1200
+      runtime.num_audit_candidates: 3
+      runtime.audit_batch_size: 2
+      runtime.max_prompt_length: 3072
+      runtime.max_completion_length: 1024
+
+  - name: action_conf_055_top5
+    overrides:
+      contract.top_k: 5
+      contract.max_selected_docs: 5
+      contract.policy_action_min_conf: 0.55
+      runtime.candidate_doc_char_limit: 1200
+      runtime.num_audit_candidates: 3
+      runtime.audit_batch_size: 2
+      runtime.max_prompt_length: 3072
+      runtime.max_completion_length: 1024
+
   - name: audit1_top5
     overrides:
       contract.top_k: 5
