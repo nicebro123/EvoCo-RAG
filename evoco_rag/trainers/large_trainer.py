@@ -11,10 +11,12 @@ torch / trl 延迟导入。
 from __future__ import annotations
 
 import json
+import os
 from typing import Callable, Optional
 
 from ..auditor import build_audit_prompt
 from ..cabl import build_boundary_pairs, build_relation_answer_pool
+from ..text_utils import exact_presence
 
 
 class LargeTrainer:
@@ -400,19 +402,164 @@ class LargeTrainer:
 
     # ---------------------------------------------------------------- GRPO
     @staticmethod
-    def make_grpo_reward_func(reward_lookup: Callable[[str], float]):
-        """构造 TRL 兼容的 reward 函数：只返回大模型 reward，不写任何训练文件。
+    def _completion_text(completion) -> str:
+        if isinstance(completion, list):
+            parts = []
+            for item in completion:
+                if isinstance(item, dict):
+                    parts.append(str(item.get("content") or ""))
+                else:
+                    parts.append(str(item))
+            return "\n".join(parts)
+        if isinstance(completion, dict):
+            return str(completion.get("content") or "")
+        return str(completion or "")
 
-        reward_lookup: sample_id -> total_reward（由 replay/verification 预先算好）。
+    @staticmethod
+    def make_grpo_reward_func(reward_lookup: Callable[[str], float] | None = None):
+        """Build a TRL-compatible deterministic CoRAG-style reward function.
+
+        The primary reward is substring/EM matching between each generated
+        completion and the gold aliases. This mirrors CoRAG's hard anchor and
+        avoids LLM-as-judge. ``reward_lookup`` is kept only for legacy callers.
         """
+
         def reward_func(completions, **kwargs):
             sample_ids = kwargs.get("sample_id", [])
+            answers = kwargs.get("answers", [])
             rewards = []
-            for i, _ in enumerate(completions):
-                sid = sample_ids[i] if i < len(sample_ids) else None
-                rewards.append(float(reward_lookup(sid)) if sid is not None else 0.0)
+            for i, completion in enumerate(completions):
+                aliases = answers[i] if i < len(answers) else []
+                if isinstance(aliases, str):
+                    aliases = [aliases]
+                text = LargeTrainer._completion_text(completion)
+                if aliases:
+                    rewards.append(1.0 if exact_presence(aliases, text) else 0.0)
+                elif reward_lookup is not None:
+                    sid = sample_ids[i] if i < len(sample_ids) else None
+                    rewards.append(float(reward_lookup(sid)) if sid is not None else 0.0)
+                else:
+                    rewards.append(0.0)
             return rewards
+
         return reward_func
+
+    def _build_grpo_record(self, exp) -> Optional[dict]:
+        from ..schemas import EvidenceContract, RagSample
+
+        sample = RagSample(
+            sample_id=exp.sample_id, question=exp.question,
+            answers=exp.answers, documents=exp.documents)
+        contract = EvidenceContract.from_dict(exp.contract) if exp.contract else None
+        if contract is None:
+            return None
+        messages = build_audit_prompt(
+            sample,
+            contract,
+            show_gold=False,
+            candidate_doc_char_limit=getattr(self.auditor, "candidate_doc_char_limit", 1200),
+        )
+        return {
+            "prompt": messages,
+            "sample_id": exp.sample_id,
+            "answers": list(exp.answers or []),
+        }
+
+    def train_grpo(
+        self,
+        experiences: list,
+        *,
+        output_dir: str,
+        num_generations: int = 2,
+        n_per_train: int = 1,
+        epochs: int = 1,
+        beta: float = 0.04,
+        temperature: float = 0.7,
+        gradient_accumulation_steps: int = 1,
+        max_steps: int | None = None,
+    ) -> dict:
+        """Train the large model with TRL GRPO and CoRAG-style reward."""
+
+        from datasets import Dataset
+        from trl import GRPOConfig, GRPOTrainer
+
+        records = [r for r in (self._build_grpo_record(exp) for exp in experiences) if r]
+        if not records:
+            return {
+                "method": "grpo",
+                "trained_samples": 0,
+                "steps": 0,
+                "num_generations": int(num_generations),
+                "reward_mode": "corag_substring",
+            }
+
+        # CoRAG clips to n_per_train groups. Keep the same deterministic shape.
+        n_per_train = max(1, int(n_per_train))
+        target_len = (len(records) // n_per_train) * n_per_train
+        if target_len > 0:
+            records = records[:target_len]
+        dataset = Dataset.from_list(records)
+
+        tok = self.auditor.tokenizer
+        old_padding_side = getattr(tok, "padding_side", "left")
+        tok.padding_side = "left"
+        if getattr(tok, "pad_token", None) is None:
+            tok.pad_token = tok.eos_token
+            tok.pad_token_id = tok.eos_token_id
+
+        model = self.auditor.model
+        if hasattr(model, "config"):
+            model.config.use_cache = False
+
+        os.makedirs(output_dir, exist_ok=True)
+        args = GRPOConfig(
+            output_dir=output_dir,
+            save_strategy="no",
+            report_to="none",
+            num_train_epochs=int(epochs),
+            num_generations=max(2, int(num_generations)),
+            per_device_train_batch_size=max(1, int(num_generations) * n_per_train),
+            learning_rate=self.lr,
+            max_prompt_length=self.max_prompt_length,
+            max_completion_length=self.max_completion_length,
+            temperature=float(temperature),
+            beta=float(beta),
+            gradient_accumulation_steps=max(1, int(gradient_accumulation_steps)),
+            max_steps=-1 if max_steps is None else int(max_steps),
+            logging_steps=1,
+            logging_first_step=True,
+            logging_strategy="steps",
+            bf16=True,
+            remove_unused_columns=False,
+        )
+        trainer = GRPOTrainer(
+            model=model,
+            args=args,
+            train_dataset=dataset,
+            reward_funcs=self.make_grpo_reward_func(),
+            processing_class=tok,
+        )
+        try:
+            result = trainer.train()
+        finally:
+            tok.padding_side = old_padding_side
+
+        train_loss = None
+        metrics = getattr(result, "metrics", None) or {}
+        if "train_loss" in metrics:
+            train_loss = metrics["train_loss"]
+        return {
+            "method": "grpo",
+            "trained_samples": len(records),
+            "steps": int(getattr(trainer.state, "global_step", 0)),
+            "num_generations": max(2, int(num_generations)),
+            "n_per_train": n_per_train,
+            "epochs": int(epochs),
+            "beta": float(beta),
+            "temperature": float(temperature),
+            "reward_mode": "corag_substring",
+            "train_loss": train_loss,
+        }
 
     def save(self, out_dir: str) -> None:
         self.auditor.save_lora(out_dir)

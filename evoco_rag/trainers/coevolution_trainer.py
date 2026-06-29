@@ -414,9 +414,29 @@ class CoevolutionTrainer:
         large_dir = None
         if self.cfg.ablation.train_large_lora and self.large_trainer is not None:
             exps = self.replay.read(round_id)
-            sft = self.replay.sample_large_sft(exps)
-            stats["large"] = self.large_trainer.train_sft(
-                sft, batch_size=self.cfg.training.large_batch_size)
+            method = str(getattr(self.cfg.training, "large_train_method", "sft")).lower()
+            print(f"round {round_id}: large training method: {method}", flush=True)
+            if method == "sft":
+                sft = self.replay.sample_large_sft(exps)
+                stats["large"] = self.large_trainer.train_sft(
+                    sft, batch_size=self.cfg.training.large_batch_size)
+            elif method == "grpo":
+                stats["large"] = self.large_trainer.train_grpo(
+                    exps,
+                    output_dir=os.path.join(
+                        self.cfg.output_dir, "grpo", f"round_{round_id:03d}"),
+                    num_generations=self.cfg.training.grpo_num_generations,
+                    n_per_train=self.cfg.training.grpo_n_per_train,
+                    epochs=self.cfg.training.grpo_epochs,
+                    beta=self.cfg.training.grpo_beta,
+                    temperature=self.cfg.training.grpo_temperature,
+                    gradient_accumulation_steps=(
+                        self.cfg.training.grpo_gradient_accumulation_steps),
+                    max_steps=self.cfg.training.grpo_max_steps,
+                )
+            else:
+                raise ValueError(
+                    f"unknown large_train_method={method!r}; expected 'sft' or 'grpo'")
             large_dir = checkpoint_round_dir(self.cfg.models.large_lora_dir, round_id)
         stats["timing"]["large_training_seconds"] = round(time.time() - large_started, 4)
         print(

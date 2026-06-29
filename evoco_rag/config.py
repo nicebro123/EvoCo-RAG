@@ -30,6 +30,17 @@ class TrainingConfig:
     large_batch_size: int = 2
     small_lr: float = 5.0e-5
     large_lr: float = 1.0e-5
+    # Large-model optimization method. ``grpo`` follows the CoRAG-style
+    # reward anchor: generated completions are rewarded by deterministic
+    # gold-alias substring/EM matching, without LLM-as-judge.
+    large_train_method: str = "sft"  # sft | grpo
+    grpo_num_generations: int = 2
+    grpo_n_per_train: int = 1
+    grpo_epochs: int = 1
+    grpo_beta: float = 0.04
+    grpo_temperature: float = 0.7
+    grpo_gradient_accumulation_steps: int = 1
+    grpo_max_steps: int | None = None
 
 
 @dataclass

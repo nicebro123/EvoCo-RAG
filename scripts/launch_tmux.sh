@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-PYTHON_BIN="${EVOCO_PYTHON:-python}"
+PYTHON_BIN="${EVOCO_PYTHON:-python3}"
 SPEC="configs/experiments/popqa_llama8b_full_sweep_2gpu.yaml"
 MODE="--launch-tmux"
 EXTRA_ARGS=()
@@ -26,7 +26,7 @@ Options:
   -h, --help        Show this help.
 
 Environment:
-  EVOCO_PYTHON      Python executable to use. Default: python.
+  EVOCO_PYTHON      Python executable to use. Default: python3.
   EVOCO_GPUS        Override the spec GPU list, e.g. 0,1. Default: spec value.
 EOF
 }

@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-PYTHON_BIN="${EVOCO_PYTHON:-python}"
+PYTHON_BIN="${EVOCO_PYTHON:-python3}"
 DATA_ROOT="${EVOCO_DATA_ROOT:-../rag_assets/rag_data/evoco_dataset_pack}"
 VERIFY_MAX_ROWS="${EVOCO_VERIFY_MAX_ROWS:-5}"
 GPU_PAIRS="${EVOCO_GPU_PAIRS:-}"
@@ -42,7 +42,7 @@ Options:
   -h, --help             Show this help.
 
 Environment:
-  EVOCO_PYTHON           Python executable to use. Default: python.
+  EVOCO_PYTHON           Python executable to use. Default: python3.
   EVOCO_DATA_ROOT        Dataset pack path, overridden by --data-root.
   EVOCO_GPUS             Override every spec GPU list, e.g. 0,1. Default: spec value.
   EVOCO_GPU_PAIRS        Round-robin runs across GPU workers, e.g. 0,1;2,3;4,5;6,7.
