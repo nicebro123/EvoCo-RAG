@@ -12,6 +12,8 @@ import json
 import os
 
 from .metrics import compute_metrics
+from ..contract import build_contract
+from ..evidence_expansion import maybe_expand_contract
 from ..replay_buffer import ReplayBuffer
 
 
@@ -96,12 +98,78 @@ class Evaluator:
         samples = list(test_samples)
         contracts = []
         for sample in samples:
-            contract = self.small.build_contract(
-                sample, round_id=round_id, top_k=self.cfg.contract.top_k,
+            policy_action = None
+            policy_action_confidence = None
+            if hasattr(self.small, "rank_documents"):
+                ranked = self.small.rank_documents(sample)
+                policy_prediction = getattr(self.small, "last_policy_prediction", {}) or {}
+                policy_action = policy_prediction.get("action")
+                policy_action_confidence = policy_prediction.get("action_confidence")
+                contract = build_contract(
+                    sample, ranked, round_id=round_id, top_k=self.cfg.contract.top_k,
+                    high_conf_threshold=self.cfg.contract.high_conf_threshold,
+                    answer_now_margin=self.cfg.contract.answer_now_margin,
+                    max_selected_docs=self.cfg.contract.max_selected_docs,
+                    action_mode=self.cfg.contract.action_mode,
+                    policy_action=policy_action,
+                    policy_action_confidence=policy_action_confidence,
+                    policy_action_min_conf=self.cfg.contract.policy_action_min_conf)
+                if policy_prediction:
+                    contract.uncertainty["policy_predicted_action"] = policy_prediction.get("action")
+                    contract.uncertainty["policy_action_logits"] = policy_prediction.get("action_logits")
+                    contract.uncertainty["policy_action_probs"] = policy_prediction.get("action_probs")
+                    contract.uncertainty["policy_heads_loaded"] = getattr(
+                        self.small, "policy_heads_loaded", False)
+            else:
+                contract = self.small.build_contract(
+                    sample, round_id=round_id, top_k=self.cfg.contract.top_k,
+                    high_conf_threshold=self.cfg.contract.high_conf_threshold,
+                    answer_now_margin=self.cfg.contract.answer_now_margin,
+                    max_selected_docs=self.cfg.contract.max_selected_docs,
+                    action_mode=self.cfg.contract.action_mode,
+                    policy_action_min_conf=self.cfg.contract.policy_action_min_conf)
+                ranked = [
+                    {
+                        "doc_id": item.get("doc_id"),
+                        "score": item.get("doc_score", -i),
+                    }
+                    for i, item in enumerate(contract.candidate_docs or [])
+                ]
+            if (
+                not self.cfg.evidence_expansion.enabled
+                and contract.retrieval_action == RetrievalAction.RETRIEVE_MORE
+                and len(ranked) > self.cfg.contract.top_k
+            ):
+                expanded_top_k = min(
+                    len(ranked),
+                    max(self.cfg.contract.top_k + 1, self.cfg.contract.top_k * 2),
+                )
+                contract = build_contract(
+                    sample, ranked, round_id=round_id, top_k=expanded_top_k,
+                    high_conf_threshold=self.cfg.contract.high_conf_threshold,
+                    answer_now_margin=self.cfg.contract.answer_now_margin,
+                    max_selected_docs=max(self.cfg.contract.max_selected_docs, expanded_top_k),
+                    num_retrieval_rounds=2,
+                    action_mode=self.cfg.contract.action_mode,
+                    policy_action=policy_action,
+                    policy_action_confidence=policy_action_confidence,
+                    policy_action_min_conf=self.cfg.contract.policy_action_min_conf)
+                contract.retrieval_action = RetrievalAction.RETRIEVE_MORE
+                contract.uncertainty.update({
+                    "retrieval_expanded": True,
+                    "initial_top_k": self.cfg.contract.top_k,
+                    "effective_top_k": expanded_top_k,
+                })
+            contract = maybe_expand_contract(
+                sample, ranked, contract,
+                runtime=self.cfg.evidence_expansion,
+                round_id=round_id,
                 high_conf_threshold=self.cfg.contract.high_conf_threshold,
                 answer_now_margin=self.cfg.contract.answer_now_margin,
                 max_selected_docs=self.cfg.contract.max_selected_docs,
                 action_mode=self.cfg.contract.action_mode,
+                policy_action=policy_action,
+                policy_action_confidence=policy_action_confidence,
                 policy_action_min_conf=self.cfg.contract.policy_action_min_conf)
             if not self.cfg.ablation.use_action_policy:
                 contract.retrieval_action = RetrievalAction.ANSWER_NOW
@@ -152,6 +220,8 @@ class Evaluator:
                     v,
                     r,
                     include_supervised_targets=False,
+                    evidence_hard_negative_config=self.cfg.evidence_hard_negative,
+                    parametric_fallback_config=self.cfg.parametric_fallback,
                 )
                 chunk_records.append(ReplayExperience(
                     sample_id=sample.sample_id, round=round_id,

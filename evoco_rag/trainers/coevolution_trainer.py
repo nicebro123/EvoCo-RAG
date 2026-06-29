@@ -13,6 +13,7 @@ import time
 
 from ..auditor import build_audit_prompt  # noqa: F401  (供大模型 SFT 复用)
 from ..contract import build_contract
+from ..evidence_expansion import maybe_expand_contract
 from ..rewards import build_training_targets, compute_decomposed_reward
 from ..replay_buffer import ReplayBuffer
 from ..schemas import ReplayExperience
@@ -134,14 +135,44 @@ class CoevolutionTrainer:
 
     def _build_contract_for_sample(self, sample, round_id: int):
         cfg = self.cfg
+        policy_action = None
+        policy_action_confidence = None
         if self.small is not None:
-            contract = self.small.build_contract(
-                sample, round_id=round_id, top_k=cfg.contract.top_k,
-                high_conf_threshold=cfg.contract.high_conf_threshold,
-                answer_now_margin=cfg.contract.answer_now_margin,
-                max_selected_docs=cfg.contract.max_selected_docs,
-                action_mode=cfg.contract.action_mode,
-                policy_action_min_conf=cfg.contract.policy_action_min_conf)
+            if hasattr(self.small, "rank_documents"):
+                ranked = self.small.rank_documents(sample)
+                policy_prediction = getattr(self.small, "last_policy_prediction", {}) or {}
+                policy_action = policy_prediction.get("action")
+                policy_action_confidence = policy_prediction.get("action_confidence")
+                contract = build_contract(
+                    sample, ranked, round_id=round_id, top_k=cfg.contract.top_k,
+                    high_conf_threshold=cfg.contract.high_conf_threshold,
+                    answer_now_margin=cfg.contract.answer_now_margin,
+                    max_selected_docs=cfg.contract.max_selected_docs,
+                    action_mode=cfg.contract.action_mode,
+                    policy_action=policy_action,
+                    policy_action_confidence=policy_action_confidence,
+                    policy_action_min_conf=cfg.contract.policy_action_min_conf)
+                if policy_prediction:
+                    contract.uncertainty["policy_predicted_action"] = policy_prediction.get("action")
+                    contract.uncertainty["policy_action_logits"] = policy_prediction.get("action_logits")
+                    contract.uncertainty["policy_action_probs"] = policy_prediction.get("action_probs")
+                    contract.uncertainty["policy_heads_loaded"] = getattr(
+                        self.small, "policy_heads_loaded", False)
+            else:
+                contract = self.small.build_contract(
+                    sample, round_id=round_id, top_k=cfg.contract.top_k,
+                    high_conf_threshold=cfg.contract.high_conf_threshold,
+                    answer_now_margin=cfg.contract.answer_now_margin,
+                    max_selected_docs=cfg.contract.max_selected_docs,
+                    action_mode=cfg.contract.action_mode,
+                    policy_action_min_conf=cfg.contract.policy_action_min_conf)
+                ranked = [
+                    {
+                        "doc_id": item.get("doc_id"),
+                        "score": item.get("doc_score", -i),
+                    }
+                    for i, item in enumerate(contract.candidate_docs or [])
+                ]
         else:
             # 无模型的纯逻辑回放（测试/调试用）：按文档原序当作打分
             ranked = [{"doc_id": d["doc_id"], "score": -i}
@@ -153,6 +184,41 @@ class CoevolutionTrainer:
                                       max_selected_docs=cfg.contract.max_selected_docs,
                                       action_mode=cfg.contract.action_mode,
                                       policy_action_min_conf=cfg.contract.policy_action_min_conf)
+        from ..schemas import RetrievalAction
+
+        if (
+            not cfg.evidence_expansion.enabled
+            and contract.retrieval_action == RetrievalAction.RETRIEVE_MORE
+            and len(ranked) > cfg.contract.top_k
+        ):
+            expanded_top_k = min(len(ranked), max(cfg.contract.top_k + 1, cfg.contract.top_k * 2))
+            contract = build_contract(
+                sample, ranked, round_id=round_id, top_k=expanded_top_k,
+                high_conf_threshold=cfg.contract.high_conf_threshold,
+                answer_now_margin=cfg.contract.answer_now_margin,
+                max_selected_docs=max(cfg.contract.max_selected_docs, expanded_top_k),
+                num_retrieval_rounds=2,
+                action_mode=cfg.contract.action_mode,
+                policy_action=policy_action,
+                policy_action_confidence=policy_action_confidence,
+                policy_action_min_conf=cfg.contract.policy_action_min_conf)
+            contract.retrieval_action = RetrievalAction.RETRIEVE_MORE
+            contract.uncertainty.update({
+                "retrieval_expanded": True,
+                "initial_top_k": cfg.contract.top_k,
+                "effective_top_k": expanded_top_k,
+            })
+        contract = maybe_expand_contract(
+            sample, ranked, contract,
+            runtime=cfg.evidence_expansion,
+            round_id=round_id,
+            high_conf_threshold=cfg.contract.high_conf_threshold,
+            answer_now_margin=cfg.contract.answer_now_margin,
+            max_selected_docs=cfg.contract.max_selected_docs,
+            action_mode=cfg.contract.action_mode,
+            policy_action=policy_action,
+            policy_action_confidence=policy_action_confidence,
+            policy_action_min_conf=cfg.contract.policy_action_min_conf)
         # 消融：关闭动态 action policy → 固定 answer_now（等价固定 top-k）
         if not cfg.ablation.use_action_policy:
             from ..schemas import RetrievalAction
@@ -189,7 +255,10 @@ class CoevolutionTrainer:
             from ..schemas import RewardBreakdown
             ar = 1.0 if verification.answer_match else 0.0
             reward = RewardBreakdown(answer_reward=ar, total_reward=ar)
-        targets = build_training_targets(sample, contract, audit, verification, reward)
+        targets = build_training_targets(
+            sample, contract, audit, verification, reward,
+            evidence_hard_negative_config=self.cfg.evidence_hard_negative,
+            parametric_fallback_config=self.cfg.parametric_fallback)
 
         return ReplayExperience(
             sample_id=sample.sample_id, round=round_id,

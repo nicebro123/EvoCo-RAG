@@ -117,6 +117,9 @@ class ReplayBuffer:
                 "documents": e.documents,
                 "positive_doc_ids": pos,
                 "negative_doc_ids": neg,
+                "positive_doc_weights": tt.get("small_positive_doc_weights", {}),
+                "negative_doc_weights": tt.get("small_negative_doc_weights", {}),
+                "hard_negative_doc_ids": tt.get("small_hard_negative_doc_ids", []),
                 "action_target": tt.get("small_action_target"),
             })
         return pairs

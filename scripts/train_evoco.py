@@ -148,6 +148,7 @@ def main():
         evidence_loss_weight=cfg.small_policy.evidence_loss_weight,
         action_loss_weight=cfg.small_policy.action_loss_weight,
         calibration_loss_weight=cfg.small_policy.calibration_loss_weight,
+        score_pointwise_loss_weight=cfg.small_policy.score_pointwise_loss_weight,
         action_class_weights=[
             cfg.small_policy.answer_now_action_weight,
             cfg.small_policy.retrieve_more_action_weight,

@@ -64,6 +64,50 @@ class CABLConfig:
 
 
 @dataclass
+class EvidenceExpansionConfig:
+    """Protocol-safe candidate expansion.
+
+    The default is disabled. When enabled with backend=sample_internal, the
+    system may expand from top-k to a larger window inside the same sample ctxs;
+    no external corpus/index is queried.
+    """
+
+    enabled: bool = False
+    backend: str = "sample_internal"  # none | sample_internal
+    trigger_mode: str = "risk"        # risk | always
+    max_expanded_docs: int = 5
+    min_top_confidence: float = 0.55
+    min_margin: float = 0.08
+    expand_on_entity_ambiguity: bool = True
+    expand_on_missing_relation: bool = True
+
+
+@dataclass
+class EvidenceHardNegativeConfig:
+    """Evidence-side hard negatives for reranker learning."""
+
+    enabled: bool = False
+    max_per_sample: int = 3
+    weight: float = 2.0
+    min_title_overlap: float = 0.34
+    min_question_overlap: float = 0.18
+    wrong_answer_bonus: float = 0.8
+
+
+@dataclass
+class ParametricFallbackConfig:
+    """Weak answer-level learning path for CoRAG-style evaluation.
+
+    This is intentionally low weight: evidence-grounded SFT remains the primary
+    path, while unsupported-but-correct answers can optionally teach the large
+    model a weak fallback behaviour without being counted as evidence support.
+    """
+
+    enabled: bool = False
+    correct_unsupported_weight: float = 0.3
+
+
+@dataclass
 class RuntimeConfig:
     candidate_doc_char_limit: int = 1200
     num_audit_candidates: int = 3
@@ -81,6 +125,7 @@ class SmallPolicyConfig:
     evidence_loss_weight: float = 1.0
     action_loss_weight: float = 0.5
     calibration_loss_weight: float = 0.2
+    score_pointwise_loss_weight: float = 0.0
     answer_now_action_weight: float = 1.0
     retrieve_more_action_weight: float = 1.3
     rewrite_query_action_weight: float = 1.0
@@ -127,6 +172,9 @@ class EvoCoConfig:
     training: TrainingConfig = field(default_factory=TrainingConfig)
     runtime: RuntimeConfig = field(default_factory=RuntimeConfig)
     cabl: CABLConfig = field(default_factory=CABLConfig)
+    evidence_expansion: EvidenceExpansionConfig = field(default_factory=EvidenceExpansionConfig)
+    evidence_hard_negative: EvidenceHardNegativeConfig = field(default_factory=EvidenceHardNegativeConfig)
+    parametric_fallback: ParametricFallbackConfig = field(default_factory=ParametricFallbackConfig)
     small_policy: SmallPolicyConfig = field(default_factory=SmallPolicyConfig)
     reward: RewardWeights = field(default_factory=RewardWeights)
     ablation: AblationConfig = field(default_factory=AblationConfig)
@@ -148,7 +196,8 @@ class EvoCoConfig:
             raise ValueError("config must contain a mapping")
         allowed_sections = {
             "project", "data", "models", "contract", "training",
-            "runtime", "cabl", "small_policy", "reward", "ablation",
+            "runtime", "cabl", "evidence_expansion", "evidence_hard_negative",
+            "parametric_fallback", "small_policy", "reward", "ablation",
         }
         unknown_sections = sorted(set(d) - allowed_sections)
         if unknown_sections:
@@ -174,6 +223,15 @@ class EvoCoConfig:
                 "training", TrainingConfig, d.get("training", {})),
             runtime=cls._build_section("runtime", RuntimeConfig, d.get("runtime", {})),
             cabl=cls._build_section("cabl", CABLConfig, d.get("cabl", {})),
+            evidence_expansion=cls._build_section(
+                "evidence_expansion", EvidenceExpansionConfig,
+                d.get("evidence_expansion", {})),
+            evidence_hard_negative=cls._build_section(
+                "evidence_hard_negative", EvidenceHardNegativeConfig,
+                d.get("evidence_hard_negative", {})),
+            parametric_fallback=cls._build_section(
+                "parametric_fallback", ParametricFallbackConfig,
+                d.get("parametric_fallback", {})),
             small_policy=cls._build_section(
                 "small_policy", SmallPolicyConfig, d.get("small_policy", {})),
             reward=cls._build_section("reward", RewardWeights, reward_raw),

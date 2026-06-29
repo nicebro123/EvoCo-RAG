@@ -166,3 +166,42 @@ def test_evolution_signal_detects_relation_confusion():
     assert signal["target_module"] == "large"
     assert signal["wrong_answer_in_candidate_docs"] is True
     assert signal["should_train_generator_boundary"] is True
+
+
+
+def test_evidence_hard_negative_targets_are_added_when_enabled():
+    sample = make_sample()
+    contract = make_contract(selected_doc_ids=[0, 1])
+    audit = make_audit(final_answer="officer", used_doc_ids=[1])
+    verification = verify(sample, contract, audit, json_valid=True)
+    reward = compute_decomposed_reward(sample, contract, audit, verification)
+    cfg = type("Cfg", (), {"enabled": True, "max_per_sample": 2, "weight": 2.5})()
+
+    targets = build_training_targets(
+        sample, contract, audit, verification, reward,
+        evidence_hard_negative_config=cfg,
+    )
+
+    assert 1 in targets["small_hard_negative_doc_ids"]
+    assert targets["small_negative_doc_weights"]["1"] == 2.5
+    assert targets["small_hard_negative_records"]
+
+
+def test_parametric_fallback_creates_low_weight_large_target_when_enabled():
+    sample = make_sample()
+    contract = make_contract(selected_doc_ids=[1])
+    audit = make_audit(final_answer="politician", used_doc_ids=[1])
+    verification = verify(sample, contract, audit, json_valid=True)
+    reward = compute_decomposed_reward(sample, contract, audit, verification)
+    cfg = type("Cfg", (), {"enabled": True, "correct_unsupported_weight": 0.25})()
+
+    targets = build_training_targets(
+        sample, contract, audit, verification, reward,
+        parametric_fallback_config=cfg,
+    )
+
+    assert targets["parametric_fallback_eligible"] is True
+    assert targets["large_sft_eligible"] is True
+    assert targets["large_sft_weight"] == 0.25
+    assert targets["large_sft_target_source"] == "parametric_fallback"
+    assert targets["large_sft_target"]["support_level"] == "unsupported"

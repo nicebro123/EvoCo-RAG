@@ -119,7 +119,13 @@ class LargeTrainer:
                 hard_pair_weight=self.cabl_hard_pair_weight,
                 skip_retrieval_absent=self.cabl_skip_retrieval_absent,
             )
-        return {"messages": messages, "target": target, "boundary_pairs": boundary_pairs}
+        return {
+            "messages": messages,
+            "target": target,
+            "boundary_pairs": boundary_pairs,
+            "weight": max(0.0, float(exp.training_targets.get("large_sft_weight", 1.0))),
+            "target_source": exp.training_targets.get("large_sft_target_source"),
+        }
 
     def _target_logprobs(
         self,
@@ -326,8 +332,15 @@ class LargeTrainer:
                             labels[row, :] = -100
                     if not torch.any(labels != -100):
                         continue
+                    weights = torch.tensor(
+                        [max(0.0, float(ex.get("weight", 1.0))) for ex in batch],
+                        dtype=torch.float32,
+                        device=model.device,
+                    )
+                    if not torch.any(weights > 0):
+                        continue
                     out = model(input_ids=input_ids, attention_mask=attention_mask, labels=labels)
-                    sft_loss = out.loss
+                    sft_loss = out.loss * weights.mean()
                     boundary_loss = None
                     boundary_pair_count = 0
                     optimizer.zero_grad()
@@ -359,6 +372,18 @@ class LargeTrainer:
             "batch_size": effective_batch_size,
             "steps": steps,
             "boundary_pairs": boundary_pairs_total,
+            "avg_sample_weight": (
+                sum(float(ex.get("weight", 1.0)) for ex in examples) / len(examples)
+            ) if examples else None,
+            "target_source_distribution": {
+                source: sum(
+                    1 for ex in examples
+                    if str(ex.get("target_source") or "unknown") == source
+                )
+                for source in sorted(
+                    {str(ex.get("target_source") or "unknown") for ex in examples}
+                )
+            },
             "cabl_enabled": self.cabl_enabled,
             "cabl_modules": {
                 "use_model_self_error": self.cabl_use_model_self_error,

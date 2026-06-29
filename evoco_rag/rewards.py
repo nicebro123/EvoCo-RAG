@@ -11,6 +11,10 @@ from dataclasses import dataclass
 import re
 
 from .cabl import relation_key_for_question
+from .evidence_hard_negatives import (
+    HardNegativeConfig,
+    mine_evidence_hard_negatives,
+)
 from .schemas import (
     Answerability,
     AnswerCorrectness,
@@ -297,6 +301,47 @@ def _build_evolution_signal(
     }
 
 
+def _cfg_enabled(config) -> bool:
+    return bool(config is not None and getattr(config, "enabled", False))
+
+
+def _evidence_hard_negative_runtime(config) -> tuple[HardNegativeConfig, float]:
+    if not _cfg_enabled(config):
+        return HardNegativeConfig(enabled=False), 1.0
+    return (
+        HardNegativeConfig(
+            enabled=True,
+            max_per_sample=int(getattr(config, "max_per_sample", 3)),
+            min_title_overlap=float(getattr(config, "min_title_overlap", 0.34)),
+            min_question_overlap=float(getattr(config, "min_question_overlap", 0.18)),
+            wrong_answer_bonus=float(getattr(config, "wrong_answer_bonus", 0.8)),
+        ),
+        max(1.0, float(getattr(config, "weight", 2.0))),
+    )
+
+
+def _parametric_fallback_target(sample: RagSample, audit: LargeAudit) -> dict | None:
+    answer = str(audit.final_answer or "").strip()
+    if not answer:
+        for alias in sample.answers:
+            alias = str(alias or "").strip()
+            if alias:
+                answer = alias
+                break
+    if not answer:
+        return None
+    return {
+        "final_answer": answer,
+        "used_doc_ids": [],
+        "used_evidence": [],
+        "answer_correctness": AnswerCorrectness.CORRECT,
+        "support_level": SupportLevel.UNSUPPORTED,
+        "failure_type": FailureType.UNSUPPORTED_ANSWER,
+        "small_model_feedback": [],
+        "suggested_action": RetrievalAction.ASK_AUDITOR,
+    }
+
+
 def _supported_answer_target(sample: RagSample, doc_ids: list[int]) -> dict | None:
     """Build a compact supervised generator target from gold-backed evidence."""
     for did in doc_ids:
@@ -335,6 +380,8 @@ def build_training_targets(
     verification: RuleVerification,
     reward: RewardBreakdown,
     include_supervised_targets: bool = True,
+    evidence_hard_negative_config=None,
+    parametric_fallback_config=None,
 ) -> dict:
     """按四象限构造大小模型训练 target（开发文档 §5.8 责任归因表）。
 
@@ -368,6 +415,10 @@ def build_training_targets(
 
     small_positive_doc_ids: list[int] = []
     small_negative_doc_ids: list[int] = []
+    small_hard_negative_records: list[dict] = []
+    small_hard_negative_doc_ids: list[int] = []
+    small_negative_doc_weights: dict[str, float] = {}
+    small_positive_doc_weights: dict[str, float] = {}
     failure_type = audit.failure_type
     do_not_reward_retriever_reason = ""
 
@@ -401,6 +452,36 @@ def build_training_targets(
             failure_type = FailureType.UNSUPPORTED_ANSWER
             do_not_reward_retriever_reason = "parametric_answer_without_support"
 
+    # Evidence-side hard negatives: same-name / same-title-family distractors
+    # that are close to the query but do not contain any gold answer. They train
+    # the reranker not to over-trust misleading evidence while preserving the
+    # CoRAG-style candidate-pool protocol.
+    hard_cfg, hard_weight = _evidence_hard_negative_runtime(evidence_hard_negative_config)
+    if hard_cfg.enabled:
+        small_hard_negative_records = mine_evidence_hard_negatives(
+            sample,
+            positive_doc_ids=relevant_pool_ids,
+            candidate_doc_ids=candidate_ids,
+            selected_doc_ids=selected_ids,
+            model_wrong_answer=evolution_signal.get("model_wrong_answer", ""),
+            config=hard_cfg,
+        )
+        existing_negatives = set(small_negative_doc_ids)
+        for record in small_hard_negative_records:
+            did = record.get("doc_id")
+            if did is None or did in relevant_pool_ids:
+                continue
+            if did not in existing_negatives:
+                small_negative_doc_ids.append(did)
+                existing_negatives.add(did)
+            small_hard_negative_doc_ids.append(did)
+            small_negative_doc_weights[str(did)] = max(
+                small_negative_doc_weights.get(str(did), 1.0), hard_weight)
+
+    small_positive_doc_weights = {str(did): 1.0 for did in small_positive_doc_ids}
+    for did in small_negative_doc_ids:
+        small_negative_doc_weights.setdefault(str(did), 1.0)
+
     # 小模型动作 target：用可执行动作 + 困难感知信号，避免把 no-op 的
     # retrieve_more 或纯后验的 generator failure 当作唯一监督。
     small_action_target = _small_action_target(sample, contract, answer_match, support)
@@ -412,6 +493,22 @@ def build_training_targets(
         if support and include_supervised_targets
         else None
     )
+    large_sft_weight = 1.0 if large_sft_target is not None else 0.0
+    parametric_fallback_eligible = False
+    if (
+        large_sft_target is None
+        and include_supervised_targets
+        and _cfg_enabled(parametric_fallback_config)
+        and answer_match
+        and not support
+    ):
+        large_sft_target = _parametric_fallback_target(sample, audit)
+        if large_sft_target is not None:
+            large_sft_weight = max(
+                0.0,
+                float(getattr(parametric_fallback_config, "correct_unsupported_weight", 0.3)),
+            )
+            parametric_fallback_eligible = True
     large_sft_eligible = large_sft_target is not None
 
     if attribution_case == AttributionCase.BOTH_SUCCESS:
@@ -432,9 +529,18 @@ def build_training_targets(
         "small_negative_doc_ids": small_negative_doc_ids,
         "small_action_target": small_action_target,
         "small_target_source": "gold_rule_verifier",
+        "small_hard_negative_doc_ids": small_hard_negative_doc_ids,
+        "small_hard_negative_records": small_hard_negative_records,
+        "small_positive_doc_weights": small_positive_doc_weights,
+        "small_negative_doc_weights": small_negative_doc_weights,
         "large_sft_eligible": large_sft_eligible,
         "large_sft_target": large_sft_target,
-        "large_sft_target_source": "gold_supported_evidence" if large_sft_target else None,
+        "large_sft_weight": large_sft_weight,
+        "large_sft_target_source": (
+            "parametric_fallback" if parametric_fallback_eligible
+            else ("gold_supported_evidence" if large_sft_target else None)
+        ),
+        "parametric_fallback_eligible": parametric_fallback_eligible,
         "evaluation_only": not include_supervised_targets,
         "large_grpo_reward": reward.total_reward,
         "failure_type": failure_type,

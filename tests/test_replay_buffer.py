@@ -111,3 +111,21 @@ def test_trust_summary_reports_json_and_consistency(tmp_path):
     assert summary["audit_json_valid_rate"] == 0.5
     assert summary["low_trust_rate"] == 0.5
     assert summary["audit_self_consistency_mean"] == 0.75
+
+
+
+def test_sample_small_training_pairs_carries_doc_weights(tmp_path):
+    rb = ReplayBuffer(root=str(tmp_path / "replay"))
+    exp = _exp("weighted", "retrieval_miss", 0.2, pos=[0], neg=[1])
+    exp.documents = [{"doc_id": 0}, {"doc_id": 1}]
+    exp.training_targets["small_target_source"] = "gold_rule_verifier"
+    exp.training_targets["small_positive_doc_weights"] = {"0": 1.0}
+    exp.training_targets["small_negative_doc_weights"] = {"1": 2.5}
+    exp.training_targets["small_hard_negative_doc_ids"] = [1]
+    rb.write([exp], round_id=0)
+
+    pairs = rb.sample_small_training_pairs(rb.read(0), min_trust=0.5)
+
+    assert pairs[0]["positive_doc_weights"] == {"0": 1.0}
+    assert pairs[0]["negative_doc_weights"] == {"1": 2.5}
+    assert pairs[0]["hard_negative_doc_ids"] == [1]

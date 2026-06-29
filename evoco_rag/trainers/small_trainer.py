@@ -35,6 +35,7 @@ class SmallTrainer:
                  evidence_loss_weight: float = 1.0,
                  action_loss_weight: float = 0.5,
                  calibration_loss_weight: float = 0.2,
+                 score_pointwise_loss_weight: float = 0.0,
                  action_class_weights: Optional[list[float]] = None):
         import torch  # noqa: F401
         self.policy = policy
@@ -45,6 +46,7 @@ class SmallTrainer:
         self.evidence_loss_weight = evidence_loss_weight
         self.action_loss_weight = action_loss_weight
         self.calibration_loss_weight = calibration_loss_weight
+        self.score_pointwise_loss_weight = float(score_pointwise_loss_weight)
         self.action_class_weights = action_class_weights
 
     def _doc_text(self, documents: list[dict], doc_id: int) -> str:
@@ -89,6 +91,7 @@ class SmallTrainer:
             policy_heads.train()
         total_loss, steps = 0.0, 0
         rank_loss_total, evidence_loss_total, action_loss_total, calibration_loss_total = 0.0, 0.0, 0.0, 0.0
+        score_pointwise_loss_total = 0.0
         evidence_correct, evidence_total = 0, 0
         action_correct, action_total = 0, 0
         calibration_probs: list[float] = []
@@ -98,14 +101,27 @@ class SmallTrainer:
                 batch = usable[start:start + self.batch_size]
                 all_pairs, split, pos_lens = [], [0], []
                 evidence_targets = []
+                score_weights = []
                 action_targets = []
                 for ex in batch:
+                    pos_ids = list(ex["positive_doc_ids"])
+                    neg_ids = list(ex["negative_doc_ids"])
                     pos = [(ex["question"], self._doc_text(ex["documents"], d))
-                           for d in ex["positive_doc_ids"]]
+                           for d in pos_ids]
                     neg = [(ex["question"], self._doc_text(ex["documents"], d))
-                           for d in ex["negative_doc_ids"]]
+                           for d in neg_ids]
+                    pos_weights = ex.get("positive_doc_weights") or {}
+                    neg_weights = ex.get("negative_doc_weights") or {}
                     all_pairs.extend(pos + neg)
                     evidence_targets.extend([1.0] * len(pos) + [0.0] * len(neg))
+                    score_weights.extend(
+                        float(pos_weights.get(str(d), pos_weights.get(d, 1.0)))
+                        for d in pos_ids
+                    )
+                    score_weights.extend(
+                        float(neg_weights.get(str(d), neg_weights.get(d, 1.0)))
+                        for d in neg_ids
+                    )
                     split.append(len(all_pairs))
                     pos_lens.append(len(pos))
                     action_targets.append(ex.get("action_target"))
@@ -136,6 +152,17 @@ class SmallTrainer:
                 evidence_loss = torch.tensor(0.0, device=device)
                 action_loss = torch.tensor(0.0, device=device)
                 calibration_loss = torch.tensor(0.0, device=device)
+                score_pointwise_loss = torch.tensor(0.0, device=device)
+
+                if self.score_pointwise_loss_weight:
+                    target = torch.tensor(evidence_targets, dtype=torch.float32, device=device)
+                    weights = torch.tensor(score_weights, dtype=torch.float32, device=device)
+                    weights = torch.clamp(weights, min=0.0)
+                    raw_pointwise = F.binary_cross_entropy_with_logits(
+                        scores.view(-1), target, reduction="none")
+                    normalizer = weights.sum().clamp_min(1.0)
+                    score_pointwise_loss = (raw_pointwise * weights).sum() / normalizer
+                    loss = loss + self.score_pointwise_loss_weight * score_pointwise_loss
 
                 if policy_heads is not None and out.hidden_states:
                     pooled = out.hidden_states[-1][:, 0]
@@ -186,7 +213,11 @@ class SmallTrainer:
                                 action_correct += int((preds == labels).sum().item())
                                 action_total += int(labels.numel())
 
-                if rank_valid == 0 and policy_heads is None:
+                if (
+                    rank_valid == 0
+                    and policy_heads is None
+                    and not self.score_pointwise_loss_weight
+                ):
                     continue
 
                 optimizer.zero_grad()
@@ -197,6 +228,7 @@ class SmallTrainer:
                 evidence_loss_total += float(evidence_loss.item())
                 action_loss_total += float(action_loss.item())
                 calibration_loss_total += float(calibration_loss.item())
+                score_pointwise_loss_total += float(score_pointwise_loss.item())
                 steps += 1
 
         policy_enabled = policy_heads is not None
@@ -212,6 +244,8 @@ class SmallTrainer:
             "avg_evidence_loss": (evidence_loss_total / steps) if (steps and policy_enabled) else None,
             "avg_action_loss": (action_loss_total / steps) if (steps and policy_enabled) else None,
             "avg_calibration_loss": (calibration_loss_total / steps) if (steps and policy_enabled) else None,
+            "avg_score_pointwise_loss": (score_pointwise_loss_total / steps) if steps else None,
+            "score_pointwise_loss_weight": self.score_pointwise_loss_weight,
             "evidence_accuracy": (evidence_correct / evidence_total) if evidence_total else None,
             "action_accuracy": (action_correct / action_total) if action_total else None,
             "calibration_ece": _binary_ece(calibration_probs, calibration_labels),

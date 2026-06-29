@@ -80,3 +80,37 @@ def test_cabl_config_is_optional_and_loadable():
     assert cfg.cabl.hard_pair_weight == 2.5
     assert cfg.cabl.skip_retrieval_absent is False
     assert cfg.cabl.relation_hint_enabled is False
+
+
+
+def test_new_attribution_modules_config_are_optional_and_loadable():
+    cfg = EvoCoConfig.from_dict({
+        "evidence_expansion": {
+            "enabled": True,
+            "backend": "sample_internal",
+            "trigger_mode": "always",
+            "max_expanded_docs": 5,
+        },
+        "evidence_hard_negative": {
+            "enabled": True,
+            "max_per_sample": 2,
+            "weight": 2.5,
+        },
+        "parametric_fallback": {
+            "enabled": True,
+            "correct_unsupported_weight": 0.25,
+        },
+        "small_policy": {
+            "score_pointwise_loss_weight": 0.2,
+        },
+    })
+
+    assert cfg.evidence_expansion.enabled is True
+    assert cfg.evidence_expansion.backend == "sample_internal"
+    assert cfg.evidence_expansion.trigger_mode == "always"
+    assert cfg.evidence_hard_negative.enabled is True
+    assert cfg.evidence_hard_negative.max_per_sample == 2
+    assert cfg.evidence_hard_negative.weight == 2.5
+    assert cfg.parametric_fallback.enabled is True
+    assert cfg.parametric_fallback.correct_unsupported_weight == 0.25
+    assert cfg.small_policy.score_pointwise_loss_weight == 0.2
