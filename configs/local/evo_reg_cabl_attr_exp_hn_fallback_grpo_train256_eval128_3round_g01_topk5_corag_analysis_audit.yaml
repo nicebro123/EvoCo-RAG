@@ -1,0 +1,105 @@
+project:
+  name: evo_reg_cabl_attr_exp_hn_fallback_grpo_train256_eval128_3round_g01_topk5_corag_analysis_audit
+  seed: 42
+  output_dir: ../rag_assets/outputs/evo_reg_cabl_attr_exp_hn_fallback_grpo_train256_eval128_3round_g01_topk5_corag_analysis_audit
+data:
+  train_path: ../rag_assets/rag_data/evoco_dataset_pack/datasets/popqa_standard/data_v33/Pop/train_labels_list.json
+  test_path: ../rag_assets/rag_data/evoco_dataset_pack/datasets/popqa_standard/data/Pop/test.json
+  dataset_name: PopQAStandard
+  debug_size: 256
+  eval_size: 128
+models:
+  small_base_path: ../rag_assets/base_models/reranker/bge-reranker-v2-m3
+  large_base_path: ../rag_assets/base_models/generator/Meta-Llama-3-8B-Instruct
+  small_lora_dir: ../rag_assets/checkpoints/evo_reg_cabl_attr_exp_hn_fallback_grpo_train256_eval128_3round_g01_topk5_corag_analysis_audit/small
+  large_lora_dir: ../rag_assets/checkpoints/evo_reg_cabl_attr_exp_hn_fallback_grpo_train256_eval128_3round_g01_topk5_corag_analysis_audit/large
+  use_4bit: true
+contract:
+  top_k: 5
+  high_conf_threshold: 0.75
+  answer_now_margin: 0.15
+  max_selected_docs: 5
+  action_mode: heuristic
+  policy_action_min_conf: 0.45
+runtime:
+  audit_prompt_style: corag_analysis_plus_audit
+  candidate_doc_char_limit: 1200
+  num_audit_candidates: 1
+  audit_batch_size: 8
+  audit_temperature: 0.0
+  max_prompt_length: 3072
+  max_completion_length: 512
+  progress_interval: 10
+  replay_flush_interval: 10
+cabl:
+  enabled: true
+  loss_weight: 0.2
+  margin: 0.5
+  max_negatives_per_sample: 3
+  min_negative_chars: 2
+  max_prompt_length: 768
+  evidence_char_limit: 512
+  use_model_self_error: true
+  use_relation_answer_pool: true
+  use_answer_type_filter: true
+  use_retrieved_distractors: true
+  use_counterfactual_evidence: true
+  hard_aware_enabled: true
+  hard_pair_weight: 2.0
+  skip_retrieval_absent: true
+  relation_hint_enabled: true
+evidence_expansion:
+  enabled: true
+  backend: sample_internal
+  trigger_mode: risk
+  max_expanded_docs: 5
+  min_top_confidence: 0.55
+  min_margin: 0.08
+  expand_on_entity_ambiguity: true
+  expand_on_missing_relation: true
+evidence_hard_negative:
+  enabled: true
+  max_per_sample: 3
+  weight: 2.0
+  min_title_overlap: 0.34
+  min_question_overlap: 0.18
+  wrong_answer_bonus: 0.8
+parametric_fallback:
+  enabled: true
+  correct_unsupported_weight: 0.3
+small_policy:
+  use_policy_heads: true
+  evidence_loss_weight: 1.0
+  action_loss_weight: 0.0
+  calibration_loss_weight: 0.2
+  score_pointwise_loss_weight: 0.2
+training:
+  num_rounds: 3
+  batch_size: 4
+  large_batch_size: 1
+  small_lr: 5.0e-05
+  large_lr: 1.0e-05
+  large_train_method: grpo
+  grpo_num_generations: 2
+  grpo_n_per_train: 1
+  grpo_epochs: 1
+  grpo_beta: 0.04
+  grpo_temperature: 0.7
+  grpo_gradient_accumulation_steps: 1
+  grpo_max_steps: null
+reward:
+  answer_weight: 1.0
+  support_weight: 1.0
+  citation_weight: 1.0
+  calibration_weight: 0.2
+  selected_doc_cost: 0.05
+  retrieval_round_cost: 0.1
+  audit_call_cost: 0.1
+  rewrite_cost: 0.1
+  retrieve_more_cost: 0.1
+ablation:
+  use_evidence_audit: true
+  use_action_policy: true
+  use_decomposed_reward: true
+  train_small_lora: true
+  train_large_lora: true

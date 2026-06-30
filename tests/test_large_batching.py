@@ -161,6 +161,21 @@ def test_large_sft_prompt_uses_auditor_candidate_char_limit():
     assert "AAAAAAAA ..." in user_content
     assert "AAAAAAAAA" not in user_content
 
+
+def test_large_sft_prompt_uses_auditor_prompt_style():
+    exp = _experience("sample-hybrid-prompt")
+    trainer = LargeTrainer(SimpleNamespace(
+        candidate_doc_char_limit=1200,
+        audit_prompt_style="hybrid_analysis_json",
+    ))
+
+    example = trainer._build_sft_example(exp)
+    system_content = example["messages"][0]["content"]
+
+    assert '"analysis"' in system_content
+    assert "reasoning trace" in system_content
+
+
 def _experience(sample_id: str) -> ReplayExperience:
     sample = make_sample()
     sample.sample_id = sample_id

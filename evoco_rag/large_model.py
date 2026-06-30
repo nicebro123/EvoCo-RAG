@@ -32,6 +32,7 @@ class LargeGeneratorAuditor:
         num_audit_candidates: int = 3,
         audit_batch_size: int = 1,
         audit_temperature: float = 0.7,
+        audit_prompt_style: str = "audit_json",
     ):
         import torch
         from transformers import AutoModelForCausalLM, AutoTokenizer
@@ -43,6 +44,7 @@ class LargeGeneratorAuditor:
         self.num_audit_candidates = max(1, int(num_audit_candidates))
         self.audit_batch_size = max(1, int(audit_batch_size))
         self.audit_temperature = max(0.0, float(audit_temperature))
+        self.audit_prompt_style = str(audit_prompt_style or "audit_json")
 
         self.tokenizer = AutoTokenizer.from_pretrained(
             base_path, local_files_only=True)
@@ -265,6 +267,7 @@ class LargeGeneratorAuditor:
             contract,
             show_gold=show_gold,
             candidate_doc_char_limit=self.candidate_doc_char_limit,
+            prompt_style=getattr(self, "audit_prompt_style", "audit_json"),
         )
 
     def _candidate_from_text(

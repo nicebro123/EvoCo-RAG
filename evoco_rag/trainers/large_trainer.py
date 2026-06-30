@@ -96,6 +96,7 @@ class LargeTrainer:
             contract,
             show_gold=False,
             candidate_doc_char_limit=getattr(self.auditor, "candidate_doc_char_limit", 1200),
+            prompt_style=getattr(self.auditor, "audit_prompt_style", "audit_json"),
         )
         payload = exp.training_targets.get("large_sft_target")
         if not isinstance(payload, dict):
@@ -458,6 +459,7 @@ class LargeTrainer:
             contract,
             show_gold=False,
             candidate_doc_char_limit=getattr(self.auditor, "candidate_doc_char_limit", 1200),
+            prompt_style=getattr(self.auditor, "audit_prompt_style", "audit_json"),
         )
         return {
             "prompt": messages,

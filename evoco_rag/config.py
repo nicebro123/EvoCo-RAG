@@ -120,6 +120,13 @@ class ParametricFallbackConfig:
 
 @dataclass
 class RuntimeConfig:
+    # audit_json keeps the original strict structured-audit prompt.
+    # hybrid_analysis_json asks the generator to first analyze evidence inside
+    # the JSON payload, then emit the same structured audit fields.
+    # corag_analysis_plus_audit follows CoRAG-style document analysis and final
+    # answer discipline, but still emits one valid JSON object.
+    # These modes are opt-in so existing experiments remain comparable.
+    audit_prompt_style: str = "audit_json"  # audit_json | hybrid_analysis_json | corag_analysis_plus_audit
     candidate_doc_char_limit: int = 1200
     num_audit_candidates: int = 3
     audit_batch_size: int = 1

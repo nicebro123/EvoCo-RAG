@@ -77,6 +77,90 @@ def test_build_audit_prompt_uses_configurable_doc_limit():
     assert "..." in text
 
 
+def test_build_hybrid_audit_prompt_requests_analysis_json():
+    sample = make_sample()
+    contract = make_contract([0])
+
+    messages = build_audit_prompt(
+        sample,
+        contract,
+        prompt_style="hybrid_analysis_json",
+    )
+    system = messages[0]["content"]
+    user = messages[1]["content"]
+
+    assert '"analysis"' in system
+    assert '"supporting|partial|irrelevant|distractor|conflicting"' in system
+    assert "Evidence analysis rules:" in user
+    assert "output ONLY that JSON object" in user
+
+
+def test_build_corag_analysis_plus_audit_prompt_stays_json_only():
+    sample = make_sample()
+    contract = make_contract([0])
+
+    messages = build_audit_prompt(
+        sample,
+        contract,
+        prompt_style="corag_analysis_plus_audit",
+    )
+    system = messages[0]["content"]
+    user = messages[1]["content"]
+
+    assert '"final_answer"' in system
+    assert '"answer_reasoning"' in system
+    assert '"document_analysis"' in system
+    assert "CoRAG's two-step" in system
+    assert "CoRAG-style JSON analysis rules:" in user
+    assert "Output JSON only" in user
+    assert "output ONLY the valid JSON object" in user
+
+
+def test_parse_hybrid_audit_preserves_evidence_analysis_metadata():
+    text = '{"analysis":[{"doc_id":0,"extraction":"Conservative Party politician",' \
+           '"reason":"matches Henry Master Feilden","support":"supporting"},' \
+           '{"doc_id":1,"extraction":"British Army officer",' \
+           '"reason":"same-name distractor","support":"distractor"}],' \
+           '"final_answer": "politician", "used_doc_ids": [0], ' \
+           '"used_evidence": [{"doc_id": 0, "quote": "Conservative Party politician"}], ' \
+           '"answer_correctness": "correct", "support_level": "fully_supported", ' \
+           '"failure_type": "none", "small_model_feedback": [], ' \
+           '"suggested_action": "answer_now"}'
+
+    audit, ok = parse_audit(text, "s1", 1)
+
+    assert ok is True
+    assert audit.final_answer == "politician"
+    analysis = audit.audit_metadata["evidence_analysis"]
+    assert analysis[0]["doc_id"] == 0
+    assert analysis[0]["support"] == "supporting"
+    assert analysis[1]["support"] == "distractor"
+
+
+def test_parse_corag_analysis_plus_audit_preserves_document_analysis_metadata():
+    text = '{"final_answer": "politician",' \
+           '"answer_reasoning": "Document 0 states that Henry Master Feilden was a politician.",' \
+           '"document_analysis":[{"doc_id":0,"extraction":"Conservative Party politician",' \
+           '"explanation":"This directly answers the occupation question.","support":"supporting"},' \
+           '{"doc_id":1,"extraction":"British Army officer",' \
+           '"explanation":"This is a same-name distractor.","support":"distractor"}],' \
+           '"used_doc_ids": [0], ' \
+           '"used_evidence": [{"doc_id": 0, "quote": "Conservative Party politician"}], ' \
+           '"answer_correctness": "correct", "support_level": "fully_supported", ' \
+           '"failure_type": "none", "small_model_feedback": [], ' \
+           '"suggested_action": "answer_now"}'
+
+    audit, ok = parse_audit(text, "s1", 1)
+
+    assert ok is True
+    assert audit.final_answer == "politician"
+    raw = audit.audit_metadata["raw_json"]
+    assert raw["answer_reasoning"].startswith("Document 0")
+    analysis = audit.audit_metadata["evidence_analysis"]
+    assert analysis[0]["reason"] == "This directly answers the occupation question."
+    assert analysis[1]["support"] == "distractor"
+
+
 def test_audit_candidate_score_prefers_supported_cited_answer():
     sample = make_sample()
     contract = make_contract([0])

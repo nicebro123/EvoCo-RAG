@@ -21,10 +21,64 @@ from .schemas import (
     SupportLevel,
 )
 
+AUDIT_PROMPT_STYLE_AUDIT_JSON = "audit_json"
+AUDIT_PROMPT_STYLE_HYBRID_ANALYSIS_JSON = "hybrid_analysis_json"
+AUDIT_PROMPT_STYLE_CORAG_ANALYSIS_PLUS_AUDIT = "corag_analysis_plus_audit"
+AUDIT_PROMPT_STYLES = {
+    AUDIT_PROMPT_STYLE_AUDIT_JSON,
+    AUDIT_PROMPT_STYLE_HYBRID_ANALYSIS_JSON,
+    AUDIT_PROMPT_STYLE_CORAG_ANALYSIS_PLUS_AUDIT,
+}
+
+
 AUDIT_JSON_SCHEMA_HINT = """You MUST output ONLY a single JSON object, no Markdown, no extra text.
 JSON schema:
 {
   "final_answer": "<short entity-style answer string; no explanation>",
+  "used_doc_ids": [<int doc_id>, ...],
+  "used_evidence": [{"doc_id": <int>, "quote": "<verbatim span>"}],
+  "answer_correctness": "correct|incorrect|unknown",
+  "support_level": "fully_supported|partially_supported|unsupported",
+  "failure_type": "none|retrieval_miss|rerank_error|entity_confusion|evidence_conflict|generation_error|unsupported_answer|over_retrieval",
+  "small_model_feedback": [{"doc_id": <int>, "label": "positive|negative|hard_negative|ignore", "reason": "<why>"}],
+  "suggested_action": "answer_now|retrieve_more|rewrite_query|ask_auditor"
+}"""
+
+HYBRID_AUDIT_JSON_SCHEMA_HINT = """You MUST first analyze the evidence, then output ONLY a single JSON object, no Markdown, no extra text.
+JSON schema:
+{
+  "analysis": [
+    {
+      "doc_id": <int doc_id>,
+      "extraction": "<verbatim or near-verbatim evidence span, or empty if irrelevant>",
+      "reason": "<why this document supports, contradicts, or distracts from the question>",
+      "support": "supporting|partial|irrelevant|distractor|conflicting"
+    }
+  ],
+  "final_answer": "<short entity-style answer string; no explanation>",
+  "used_doc_ids": [<int doc_id>, ...],
+  "used_evidence": [{"doc_id": <int>, "quote": "<verbatim span>"}],
+  "answer_correctness": "correct|incorrect|unknown",
+  "support_level": "fully_supported|partially_supported|unsupported",
+  "failure_type": "none|retrieval_miss|rerank_error|entity_confusion|evidence_conflict|generation_error|unsupported_answer|over_retrieval",
+  "small_model_feedback": [{"doc_id": <int>, "label": "positive|negative|hard_negative|ignore", "reason": "<why>"}],
+  "suggested_action": "answer_now|retrieve_more|rewrite_query|ask_auditor"
+}"""
+
+CORAG_ANALYSIS_PLUS_AUDIT_JSON_SCHEMA_HINT = """You MUST follow CoRAG's two-step document analysis and final-answer discipline, but the output MUST still be ONLY a single valid JSON object, no Markdown, no code fence, no extra text.
+Put final_answer near the top and do not leave it empty.
+JSON schema:
+{
+  "final_answer": "<short entity-style answer string; no explanation>",
+  "answer_reasoning": "<one concise sentence explaining why final_answer follows from the supporting documents>",
+  "document_analysis": [
+    {
+      "doc_id": <int doc_id>,
+      "extraction": "<evidence span copied or closely paraphrased from this document>",
+      "explanation": "<how this document addresses the question, or why it is a distractor>",
+      "support": "supporting|partial|irrelevant|distractor|conflicting"
+    }
+  ],
   "used_doc_ids": [<int doc_id>, ...],
   "used_evidence": [{"doc_id": <int>, "quote": "<verbatim span>"}],
   "answer_correctness": "correct|incorrect|unknown",
@@ -50,18 +104,46 @@ def build_audit_prompt(
     contract,
     show_gold: bool = False,
     candidate_doc_char_limit: int = 1200,
+    prompt_style: str = AUDIT_PROMPT_STYLE_AUDIT_JSON,
 ) -> list[dict]:
     """构造 (system, user) chat messages。
 
     运行时训练和评估都必须保持 show_gold=False。参数仅保留给离线 prompt
     诊断，不能用于生成 replay 或测试预测。
     """
+    if prompt_style not in AUDIT_PROMPT_STYLES:
+        raise ValueError(
+            f"unknown audit prompt_style={prompt_style!r}; "
+            f"expected one of {sorted(AUDIT_PROMPT_STYLES)}"
+        )
+    hybrid = prompt_style == AUDIT_PROMPT_STYLE_HYBRID_ANALYSIS_JSON
+    corag_analysis = prompt_style == AUDIT_PROMPT_STYLE_CORAG_ANALYSIS_PLUS_AUDIT
+    if corag_analysis:
+        schema_hint = CORAG_ANALYSIS_PLUS_AUDIT_JSON_SCHEMA_HINT
+    elif hybrid:
+        schema_hint = HYBRID_AUDIT_JSON_SCHEMA_HINT
+    else:
+        schema_hint = AUDIT_JSON_SCHEMA_HINT
+
     system = (
         "You are an evidence auditor for a retrieval-augmented QA system. "
         "Given a question, a small model's selected evidence and candidate documents, "
         "you must (1) answer the question, (2) cite which documents you used, and "
         "(3) audit whether the evidence truly supports your answer. "
-        "For factoid QA, final_answer must be the shortest correct entity or phrase, "
+        + (
+            "Before deciding the final answer, explicitly analyze every candidate "
+            "document inside the JSON analysis array. The analysis is not optional: "
+            "it is the reasoning trace that will be converted into retriever feedback. "
+            if hybrid else ""
+        )
+        + (
+            "Use CoRAG's two-step discipline inside JSON: first fill document_analysis "
+            "for each document with extraction and explanation, then write a concise "
+            "final_answer and answer_reasoning. The answer should appear in final_answer, "
+            "answer_reasoning, and at least one supporting extraction when evidence exists. "
+            if corag_analysis else ""
+        )
+        + "For factoid QA, final_answer must be the shortest correct entity or phrase, "
         "not a full sentence and not an explanation. Prefer an answer phrase that "
         "appears verbatim in the quoted evidence. Be careful with same-name or "
         "near-name distractors: the cited document must describe the entity asked "
@@ -70,7 +152,7 @@ def build_audit_prompt(
         "do not output nationalities, dates, titles, or an unrelated role from a "
         "different same-name person. If several occupations are supported, choose "
         "the concise common category rather than a long biographical sentence.\n\n"
-        + AUDIT_JSON_SCHEMA_HINT + "\n\n" + FAILURE_TYPE_DEFS
+        + schema_hint + "\n\n" + FAILURE_TYPE_DEFS
     )
 
     limit = max(1, int(candidate_doc_char_limit or 1200))
@@ -86,6 +168,23 @@ def build_audit_prompt(
         suffix = " ..." if len(text) > limit else ""
         lines.append(f"  [doc_id={cand.get('doc_id')}] {doc.get('title', '')}: {truncated}{suffix}")
     lines.append("")
+    if corag_analysis:
+        lines.append("CoRAG-style JSON analysis rules:")
+        lines.append("  - Output JSON only, but internally follow Step 1 Document Analysis and Step 2 Final Answer.")
+        lines.append("  - document_analysis must contain one item per candidate document when possible.")
+        lines.append("  - Each document_analysis item must include extraction, explanation, and support.")
+        lines.append("  - Put the answer phrase in final_answer; do not leave final_answer empty.")
+        lines.append("  - answer_reasoning should briefly restate the answer and cite the supporting document.")
+        lines.append("  - If a same-name document is about the wrong entity, mark it as distractor.")
+        lines.append("")
+    elif hybrid:
+        lines.append("Evidence analysis rules:")
+        lines.append("  - Fill the JSON analysis array before final_answer.")
+        lines.append("  - For each candidate document, extract the most relevant span if any.")
+        lines.append("  - Mark support as supporting, partial, irrelevant, distractor, or conflicting.")
+        lines.append("  - Treat same-name or near-name documents about the wrong entity as distractor.")
+        lines.append("  - The final JSON decision must be consistent with the analysis array.")
+        lines.append("")
     lines.append("Answer selection rules:")
     lines.append("  - final_answer should be copied from the evidence whenever possible.")
     lines.append("  - cited quotes must contain the answer phrase or directly justify it.")
@@ -96,7 +195,12 @@ def build_audit_prompt(
         lines.append("")
         lines.append(f"(Training-only) Gold answers: {sample.answers}")
     lines.append("")
-    lines.append("Now output ONLY the JSON object described in the schema.")
+    if corag_analysis:
+        lines.append("Now output ONLY the valid JSON object with final_answer, answer_reasoning, document_analysis, and audit fields.")
+    elif hybrid:
+        lines.append("Now perform the evidence analysis inside the JSON and output ONLY that JSON object.")
+    else:
+        lines.append("Now output ONLY the JSON object described in the schema.")
 
     return [
         {"role": "system", "content": system},
@@ -150,6 +254,30 @@ def _coerce_enum(value, allowed: set, default):
 def _sanitize(d: dict) -> dict:
     """Normalize already validated payload fields for LargeAudit."""
     out = dict(d)
+    analysis = []
+    for item in (d.get("analysis", []) or []) + (d.get("document_analysis", []) or []):
+        if not isinstance(item, dict):
+            continue
+        try:
+            doc_id = int(item.get("doc_id"))
+        except (TypeError, ValueError):
+            continue
+        support = str(item.get("support") or "irrelevant")
+        if support not in {
+            "supporting",
+            "partial",
+            "irrelevant",
+            "distractor",
+            "conflicting",
+        }:
+            support = "irrelevant"
+        analysis.append({
+            "doc_id": doc_id,
+            "extraction": str(item.get("extraction") or ""),
+            "reason": str(item.get("reason") or item.get("explanation") or ""),
+            "support": support,
+        })
+    out["_analysis"] = analysis
     out["answer_correctness"] = _coerce_enum(
         d.get("answer_correctness"), AnswerCorrectness.ALL, AnswerCorrectness.UNKNOWN)
     out["support_level"] = _coerce_enum(
@@ -239,6 +367,40 @@ def _audit_schema_error(d: object) -> str | None:
             return "invalid_small_model_feedback"
         if item.get("label") not in FeedbackLabel.ALL:
             return "invalid_small_model_feedback_label"
+    analysis_fields = []
+    if "analysis" in d:
+        if not isinstance(d.get("analysis"), list):
+            return "analysis_not_list"
+        analysis_fields.append("analysis")
+    if "document_analysis" in d:
+        if not isinstance(d.get("document_analysis"), list):
+            return "document_analysis_not_list"
+        analysis_fields.append("document_analysis")
+    if analysis_fields:
+        allowed_support = {
+            "supporting",
+            "partial",
+            "irrelevant",
+            "distractor",
+            "conflicting",
+        }
+        for field in analysis_fields:
+            for item in d[field]:
+                if not isinstance(item, dict):
+                    return f"invalid_{field}"
+                if "doc_id" not in item:
+                    return f"invalid_{field}_doc_id"
+                try:
+                    int(item["doc_id"])
+                except (TypeError, ValueError):
+                    return f"invalid_{field}_doc_id"
+                if not isinstance(item.get("extraction", ""), str):
+                    return f"invalid_{field}_extraction"
+                reason_value = item.get("reason", item.get("explanation", ""))
+                if not isinstance(reason_value, str):
+                    return f"invalid_{field}_reason"
+                if item.get("support") not in allowed_support:
+                    return f"invalid_{field}_support"
     return None
 
 
@@ -285,7 +447,9 @@ def parse_audit(text: str, sample_id: str, round_id: int) -> tuple[LargeAudit, b
     block.setdefault("sample_id", sample_id)
     block.setdefault("round", round_id)
     try:
-        audit = LargeAudit.from_dict(_sanitize(block))
+        sanitized = _sanitize(block)
+        analysis = sanitized.pop("_analysis", [])
+        audit = LargeAudit.from_dict(sanitized)
         audit.audit_metadata = {
             **(audit.audit_metadata or {}),
             "parse_status": "parsed",
@@ -293,6 +457,7 @@ def parse_audit(text: str, sample_id: str, round_id: int) -> tuple[LargeAudit, b
             # excluded so CoRAG-style metrics do not count input evidence.
             "raw_text": (text or "")[:8000],
             "raw_json": block,
+            **({"evidence_analysis": analysis} if analysis else {}),
         }
         return audit, True
     except (TypeError, ValueError):

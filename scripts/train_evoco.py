@@ -139,7 +139,8 @@ def main():
         candidate_doc_char_limit=cfg.runtime.candidate_doc_char_limit,
         num_audit_candidates=cfg.runtime.num_audit_candidates,
         audit_batch_size=cfg.runtime.audit_batch_size,
-        audit_temperature=cfg.runtime.audit_temperature)
+        audit_temperature=cfg.runtime.audit_temperature,
+        audit_prompt_style=cfg.runtime.audit_prompt_style)
 
     small_trainer = SmallTrainer(
         small_policy,
