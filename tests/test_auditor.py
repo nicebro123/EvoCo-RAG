@@ -116,6 +116,45 @@ def test_build_corag_analysis_plus_audit_prompt_stays_json_only():
     assert "output ONLY the valid JSON object" in user
 
 
+
+def test_build_hybrid_json_repair_prompt_keeps_structured_analysis_and_repair_fields():
+    sample = make_sample()
+    contract = make_contract([0])
+
+    messages = build_audit_prompt(
+        sample,
+        contract,
+        prompt_style="hybrid_json_repair",
+    )
+    system = messages[0]["content"]
+    user = messages[1]["content"]
+
+    assert '"final_answer"' in system
+    assert '"answer_summary"' in system
+    assert '"analysis"' in system
+    assert "repair-oriented hybrid JSON" in system
+    assert "Hybrid JSON repair rules:" in user
+    assert "Put final_answer and answer_summary before the analysis array" in user
+    assert "valid repair-oriented JSON object" in user
+
+
+def test_parse_hybrid_json_repair_preserves_answer_summary_and_analysis():
+    text = '{"final_answer":"politician",' \
+           '"answer_summary":"The final answer is politician, supported by doc_id=0.",' \
+           '"analysis":[{"doc_id":0,"extraction":"Conservative Party politician",' \
+           '"reason":"matches Henry Master Feilden","support":"supporting"}],' \
+           '"used_doc_ids":[0], "used_evidence":[{"doc_id":0,"quote":"Conservative Party politician"}],' \
+           '"answer_correctness":"correct", "support_level":"fully_supported",' \
+           '"failure_type":"none", "small_model_feedback":[],' \
+           '"suggested_action":"answer_now"}'
+
+    audit, ok = parse_audit(text, "s1", 1)
+
+    assert ok is True
+    assert audit.final_answer == "politician"
+    assert audit.audit_metadata["answer_summary"].startswith("The final answer")
+    assert audit.audit_metadata["evidence_analysis"][0]["support"] == "supporting"
+
 def test_parse_hybrid_audit_preserves_evidence_analysis_metadata():
     text = '{"analysis":[{"doc_id":0,"extraction":"Conservative Party politician",' \
            '"reason":"matches Henry Master Feilden","support":"supporting"},' \
@@ -136,6 +175,42 @@ def test_parse_hybrid_audit_preserves_evidence_analysis_metadata():
     assert analysis[0]["support"] == "supporting"
     assert analysis[1]["support"] == "distractor"
 
+
+
+def test_build_relaxed_corag_json_prompt_uses_flat_analysis_text():
+    sample = make_sample()
+    contract = make_contract([0])
+
+    messages = build_audit_prompt(
+        sample,
+        contract,
+        prompt_style="relaxed_corag_json",
+    )
+    system = messages[0]["content"]
+    user = messages[1]["content"]
+
+    assert '"analysis_text"' in system
+    assert '"document_analysis"' not in system
+    assert "top-level JSON flat" in system
+    assert "Relaxed CoRAG JSON rules:" in user
+    assert "analysis_text is a single natural-language string" in user
+    assert "output ONLY the valid flat JSON object" in user
+
+
+def test_parse_relaxed_corag_json_preserves_analysis_text_metadata():
+    text = '{"analysis_text":"Document 0 says Henry Master Feilden was a Conservative Party politician. Therefore the final answer is politician.",' \
+           '"final_answer": "politician", "used_doc_ids": [0], ' \
+           '"used_evidence": [{"doc_id": 0, "quote": "Conservative Party politician"}], ' \
+           '"answer_correctness": "correct", "support_level": "fully_supported", ' \
+           '"failure_type": "none", "small_model_feedback": [], ' \
+           '"suggested_action": "answer_now"}'
+
+    audit, ok = parse_audit(text, "s1", 1)
+
+    assert ok is True
+    assert audit.final_answer == "politician"
+    assert "final answer is politician" in audit.audit_metadata["analysis_text"]
+    assert audit.audit_metadata["raw_json"]["analysis_text"].startswith("Document 0")
 
 def test_parse_corag_analysis_plus_audit_preserves_document_analysis_metadata():
     text = '{"final_answer": "politician",' \

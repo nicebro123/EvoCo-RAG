@@ -24,10 +24,14 @@ from .schemas import (
 AUDIT_PROMPT_STYLE_AUDIT_JSON = "audit_json"
 AUDIT_PROMPT_STYLE_HYBRID_ANALYSIS_JSON = "hybrid_analysis_json"
 AUDIT_PROMPT_STYLE_CORAG_ANALYSIS_PLUS_AUDIT = "corag_analysis_plus_audit"
+AUDIT_PROMPT_STYLE_RELAXED_CORAG_JSON = "relaxed_corag_json"
+AUDIT_PROMPT_STYLE_HYBRID_JSON_REPAIR = "hybrid_json_repair"
 AUDIT_PROMPT_STYLES = {
     AUDIT_PROMPT_STYLE_AUDIT_JSON,
     AUDIT_PROMPT_STYLE_HYBRID_ANALYSIS_JSON,
     AUDIT_PROMPT_STYLE_CORAG_ANALYSIS_PLUS_AUDIT,
+    AUDIT_PROMPT_STYLE_RELAXED_CORAG_JSON,
+    AUDIT_PROMPT_STYLE_HYBRID_JSON_REPAIR,
 }
 
 
@@ -88,6 +92,44 @@ JSON schema:
   "suggested_action": "answer_now|retrieve_more|rewrite_query|ask_auditor"
 }"""
 
+RELAXED_CORAG_JSON_SCHEMA_HINT = """You MUST write a CoRAG-style evidence analysis inside one JSON string field, then provide a short final answer. Output ONLY a single valid JSON object, no Markdown, no code fence, no extra text.
+This format intentionally uses one free-form analysis_text field instead of a nested per-document array, so keep the JSON simple and valid.
+JSON schema:
+{
+  "analysis_text": "<CoRAG-style two-step analysis: discuss useful documents, include the answer phrase when supported, then state the final answer in words>",
+  "final_answer": "<short entity-style answer string; no explanation>",
+  "used_doc_ids": [<int doc_id>, ...],
+  "used_evidence": [{"doc_id": <int>, "quote": "<verbatim span>"}],
+  "answer_correctness": "correct|incorrect|unknown",
+  "support_level": "fully_supported|partially_supported|unsupported",
+  "failure_type": "none|retrieval_miss|rerank_error|entity_confusion|evidence_conflict|generation_error|unsupported_answer|over_retrieval",
+  "small_model_feedback": [{"doc_id": <int>, "label": "positive|negative|hard_negative|ignore", "reason": "<why>"}],
+  "suggested_action": "answer_now|retrieve_more|rewrite_query|ask_auditor"
+}"""
+
+HYBRID_JSON_REPAIR_SCHEMA_HINT = """You MUST do evidence analysis like hybrid_analysis_json, but make the answer recoverable even if nested analysis becomes long. Output ONLY one valid JSON object, no Markdown, no code fence, no extra text.
+This repair-oriented schema keeps BOTH a structured analysis array and a flat answer_summary string. Keep final_answer near the top and non-empty.
+JSON schema:
+{
+  "final_answer": "<short entity-style answer string; no explanation>",
+  "answer_summary": "<one short sentence that repeats the final answer phrase and cites the supporting doc_id>",
+  "analysis": [
+    {
+      "doc_id": <int doc_id>,
+      "extraction": "<verbatim or near-verbatim evidence span, or empty if irrelevant>",
+      "reason": "<why this document supports, contradicts, or distracts from the question>",
+      "support": "supporting|partial|irrelevant|distractor|conflicting"
+    }
+  ],
+  "used_doc_ids": [<int doc_id>, ...],
+  "used_evidence": [{"doc_id": <int>, "quote": "<verbatim span>"}],
+  "answer_correctness": "correct|incorrect|unknown",
+  "support_level": "fully_supported|partially_supported|unsupported",
+  "failure_type": "none|retrieval_miss|rerank_error|entity_confusion|evidence_conflict|generation_error|unsupported_answer|over_retrieval",
+  "small_model_feedback": [{"doc_id": <int>, "label": "positive|negative|hard_negative|ignore", "reason": "<why>"}],
+  "suggested_action": "answer_now|retrieve_more|rewrite_query|ask_auditor"
+}"""
+
 FAILURE_TYPE_DEFS = """failure_type definitions:
 - none: answer correct and evidence supports it.
 - retrieval_miss: required evidence is absent from candidate docs.
@@ -118,7 +160,13 @@ def build_audit_prompt(
         )
     hybrid = prompt_style == AUDIT_PROMPT_STYLE_HYBRID_ANALYSIS_JSON
     corag_analysis = prompt_style == AUDIT_PROMPT_STYLE_CORAG_ANALYSIS_PLUS_AUDIT
-    if corag_analysis:
+    relaxed_corag = prompt_style == AUDIT_PROMPT_STYLE_RELAXED_CORAG_JSON
+    hybrid_repair = prompt_style == AUDIT_PROMPT_STYLE_HYBRID_JSON_REPAIR
+    if hybrid_repair:
+        schema_hint = HYBRID_JSON_REPAIR_SCHEMA_HINT
+    elif relaxed_corag:
+        schema_hint = RELAXED_CORAG_JSON_SCHEMA_HINT
+    elif corag_analysis:
         schema_hint = CORAG_ANALYSIS_PLUS_AUDIT_JSON_SCHEMA_HINT
     elif hybrid:
         schema_hint = HYBRID_AUDIT_JSON_SCHEMA_HINT
@@ -142,6 +190,19 @@ def build_audit_prompt(
             "final_answer and answer_reasoning. The answer should appear in final_answer, "
             "answer_reasoning, and at least one supporting extraction when evidence exists. "
             if corag_analysis else ""
+        )
+        + (
+            "Use a relaxed CoRAG-style JSON format: write a substantial analysis_text "
+            "that discusses the relevant documents and explicitly states the final answer, "
+            "then fill final_answer and compact audit fields. Keep the top-level JSON flat. "
+            if relaxed_corag else ""
+        )
+        + (
+            "Use a repair-oriented hybrid JSON format: first put a short non-empty "
+            "final_answer and answer_summary near the top, then provide the structured "
+            "analysis array. The answer phrase must appear in final_answer, "
+            "answer_summary, and one supporting extraction/quote when supported. "
+            if hybrid_repair else ""
         )
         + "For factoid QA, final_answer must be the shortest correct entity or phrase, "
         "not a full sentence and not an explanation. Prefer an answer phrase that "
@@ -168,7 +229,26 @@ def build_audit_prompt(
         suffix = " ..." if len(text) > limit else ""
         lines.append(f"  [doc_id={cand.get('doc_id')}] {doc.get('title', '')}: {truncated}{suffix}")
     lines.append("")
-    if corag_analysis:
+    if hybrid_repair:
+        lines.append("Hybrid JSON repair rules:")
+        lines.append("  - Output JSON only; do not write Markdown or text outside JSON.")
+        lines.append("  - Put final_answer and answer_summary before the analysis array.")
+        lines.append("  - final_answer must be short, non-empty, and copied from supporting evidence whenever possible.")
+        lines.append("  - answer_summary must repeat the final answer phrase in a plain sentence.")
+        lines.append("  - Fill analysis as an array, but keep each reason short to avoid malformed JSON.")
+        lines.append("  - Escape quotes/newlines properly so the JSON remains valid.")
+        lines.append("  - If a same-name document is about the wrong entity, mark it as distractor and do not cite it.")
+        lines.append("")
+    elif relaxed_corag:
+        lines.append("Relaxed CoRAG JSON rules:")
+        lines.append("  - Output JSON only; do not write Markdown or text outside JSON.")
+        lines.append("  - analysis_text is a single natural-language string, not a nested array.")
+        lines.append("  - In analysis_text, briefly analyze the useful documents and state the answer phrase explicitly.")
+        lines.append("  - final_answer must be short and non-empty.")
+        lines.append("  - Escape quotes/newlines properly so the JSON remains valid.")
+        lines.append("  - If a same-name document is about the wrong entity, say so in analysis_text and do not cite it.")
+        lines.append("")
+    elif corag_analysis:
         lines.append("CoRAG-style JSON analysis rules:")
         lines.append("  - Output JSON only, but internally follow Step 1 Document Analysis and Step 2 Final Answer.")
         lines.append("  - document_analysis must contain one item per candidate document when possible.")
@@ -195,7 +275,11 @@ def build_audit_prompt(
         lines.append("")
         lines.append(f"(Training-only) Gold answers: {sample.answers}")
     lines.append("")
-    if corag_analysis:
+    if hybrid_repair:
+        lines.append("Now output ONLY the valid repair-oriented JSON object with final_answer, answer_summary, analysis, and audit fields.")
+    elif relaxed_corag:
+        lines.append("Now output ONLY the valid flat JSON object with analysis_text, final_answer, and audit fields.")
+    elif corag_analysis:
         lines.append("Now output ONLY the valid JSON object with final_answer, answer_reasoning, document_analysis, and audit fields.")
     elif hybrid:
         lines.append("Now perform the evidence analysis inside the JSON and output ONLY that JSON object.")
@@ -254,6 +338,12 @@ def _coerce_enum(value, allowed: set, default):
 def _sanitize(d: dict) -> dict:
     """Normalize already validated payload fields for LargeAudit."""
     out = dict(d)
+    analysis_text = str(d.get("analysis_text") or "").strip()
+    if analysis_text:
+        out["_analysis_text"] = analysis_text
+    answer_summary = str(d.get("answer_summary") or "").strip()
+    if answer_summary:
+        out["_answer_summary"] = answer_summary
     analysis = []
     for item in (d.get("analysis", []) or []) + (d.get("document_analysis", []) or []):
         if not isinstance(item, dict):
@@ -368,6 +458,8 @@ def _audit_schema_error(d: object) -> str | None:
         if item.get("label") not in FeedbackLabel.ALL:
             return "invalid_small_model_feedback_label"
     analysis_fields = []
+    if "answer_summary" in d and not isinstance(d.get("answer_summary"), str):
+        return "answer_summary_not_string"
     if "analysis" in d:
         if not isinstance(d.get("analysis"), list):
             return "analysis_not_list"
@@ -449,6 +541,8 @@ def parse_audit(text: str, sample_id: str, round_id: int) -> tuple[LargeAudit, b
     try:
         sanitized = _sanitize(block)
         analysis = sanitized.pop("_analysis", [])
+        analysis_text = sanitized.pop("_analysis_text", "")
+        answer_summary = sanitized.pop("_answer_summary", "")
         audit = LargeAudit.from_dict(sanitized)
         audit.audit_metadata = {
             **(audit.audit_metadata or {}),
@@ -458,6 +552,8 @@ def parse_audit(text: str, sample_id: str, round_id: int) -> tuple[LargeAudit, b
             "raw_text": (text or "")[:8000],
             "raw_json": block,
             **({"evidence_analysis": analysis} if analysis else {}),
+            **({"analysis_text": analysis_text} if analysis_text else {}),
+            **({"answer_summary": answer_summary} if answer_summary else {}),
         }
         return audit, True
     except (TypeError, ValueError):
