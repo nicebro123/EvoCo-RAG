@@ -103,6 +103,25 @@ class EvidenceHardNegativeConfig:
     min_title_overlap: float = 0.34
     min_question_overlap: float = 0.18
     wrong_answer_bonus: float = 0.8
+    entity_confusion_bonus: float = 0.7
+    relation_mismatch_bonus: float = 0.5
+    selected_unsupported_bonus: float = 0.3
+
+
+@dataclass
+class EntityConsistencyConfig:
+    """Protocol-safe same-entity/relation reranking inside the sample pool."""
+
+    enabled: bool = False
+    weight: float = 0.35
+    min_entity_overlap: float = 0.34
+    exact_title_bonus: float = 0.35
+    missing_entity_penalty: float = 0.15
+    parenthetical_penalty: float = 0.08
+    max_boost: float = 0.75
+    relation_weight: float = 0.25
+    local_support_weight: float = 0.25
+    same_name_distractor_penalty: float = 0.18
 
 
 @dataclass
@@ -125,8 +144,12 @@ class RuntimeConfig:
     # the JSON payload, then emit the same structured audit fields.
     # corag_analysis_plus_audit follows CoRAG-style document analysis and final
     # answer discipline, but still emits one valid JSON object.
+    # relaxed_corag_json keeps one flat analysis_text field for easier JSON
+    # validity while preserving CoRAG-style long-form answer containment.
+    # hybrid_json_repair keeps hybrid structured analysis but puts a recoverable
+    # final_answer/answer_summary before the long array to reduce parse failures.
     # These modes are opt-in so existing experiments remain comparable.
-    audit_prompt_style: str = "audit_json"  # audit_json | hybrid_analysis_json | corag_analysis_plus_audit
+    audit_prompt_style: str = "audit_json"  # audit_json | hybrid_analysis_json | corag_analysis_plus_audit | relaxed_corag_json | hybrid_json_repair
     candidate_doc_char_limit: int = 1200
     num_audit_candidates: int = 3
     audit_batch_size: int = 1
@@ -193,6 +216,7 @@ class EvoCoConfig:
     evidence_expansion: EvidenceExpansionConfig = field(default_factory=EvidenceExpansionConfig)
     evidence_hard_negative: EvidenceHardNegativeConfig = field(default_factory=EvidenceHardNegativeConfig)
     parametric_fallback: ParametricFallbackConfig = field(default_factory=ParametricFallbackConfig)
+    entity_consistency: EntityConsistencyConfig = field(default_factory=EntityConsistencyConfig)
     small_policy: SmallPolicyConfig = field(default_factory=SmallPolicyConfig)
     reward: RewardWeights = field(default_factory=RewardWeights)
     ablation: AblationConfig = field(default_factory=AblationConfig)
@@ -215,7 +239,7 @@ class EvoCoConfig:
         allowed_sections = {
             "project", "data", "models", "contract", "training",
             "runtime", "cabl", "evidence_expansion", "evidence_hard_negative",
-            "parametric_fallback", "small_policy", "reward", "ablation",
+            "parametric_fallback", "entity_consistency", "small_policy", "reward", "ablation",
         }
         unknown_sections = sorted(set(d) - allowed_sections)
         if unknown_sections:
@@ -250,6 +274,9 @@ class EvoCoConfig:
             parametric_fallback=cls._build_section(
                 "parametric_fallback", ParametricFallbackConfig,
                 d.get("parametric_fallback", {})),
+            entity_consistency=cls._build_section(
+                "entity_consistency", EntityConsistencyConfig,
+                d.get("entity_consistency", {})),
             small_policy=cls._build_section(
                 "small_policy", SmallPolicyConfig, d.get("small_policy", {})),
             reward=cls._build_section("reward", RewardWeights, reward_raw),

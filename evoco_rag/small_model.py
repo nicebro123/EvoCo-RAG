@@ -17,6 +17,7 @@ import warnings
 from typing import Optional
 
 from .contract import build_contract
+from .entity_consistency import EntityConsistencyConfig, apply_entity_consistency_rerank
 from .schemas import EvidenceContract, RagSample, RetrievalAction
 from .text_utils import best_evidence_span
 
@@ -204,8 +205,11 @@ class SmallRagPolicy:
         max_selected_docs: int = 3,
         action_mode: str = "heuristic",
         policy_action_min_conf: float = 0.45,
+        entity_consistency: EntityConsistencyConfig | None = None,
     ) -> EvidenceContract:
         ranked = self.rank_documents(sample)
+        if entity_consistency is not None:
+            ranked = apply_entity_consistency_rerank(sample, ranked, entity_consistency)
         policy_action = self.last_policy_prediction.get("action")
         policy_action_confidence = self.last_policy_prediction.get("action_confidence")
         contract = build_contract(

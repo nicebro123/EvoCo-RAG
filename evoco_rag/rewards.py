@@ -315,6 +315,9 @@ def _evidence_hard_negative_runtime(config) -> tuple[HardNegativeConfig, float]:
             min_title_overlap=float(getattr(config, "min_title_overlap", 0.34)),
             min_question_overlap=float(getattr(config, "min_question_overlap", 0.18)),
             wrong_answer_bonus=float(getattr(config, "wrong_answer_bonus", 0.8)),
+            entity_confusion_bonus=float(getattr(config, "entity_confusion_bonus", 0.7)),
+            relation_mismatch_bonus=float(getattr(config, "relation_mismatch_bonus", 0.5)),
+            selected_unsupported_bonus=float(getattr(config, "selected_unsupported_bonus", 0.3)),
         ),
         max(1.0, float(getattr(config, "weight", 2.0))),
     )

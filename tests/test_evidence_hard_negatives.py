@@ -33,3 +33,25 @@ def test_evidence_hard_negative_never_returns_gold_doc():
     )
 
     assert all(item["doc_id"] != 0 for item in records)
+
+
+def test_evidence_hard_negative_marks_same_name_relation_mismatch():
+    sample = make_sample()
+    sample.documents.append({
+        "doc_id": 2,
+        "title": "Henry Feilden",
+        "text": "Henry Feilden was born in London and travelled widely.",
+    })
+
+    records = mine_evidence_hard_negatives(
+        sample,
+        positive_doc_ids=[0],
+        candidate_doc_ids=[0, 2],
+        selected_doc_ids=[2],
+        config=HardNegativeConfig(enabled=True, max_per_sample=3),
+    )
+
+    target = next(item for item in records if item["doc_id"] == 2)
+    assert "same_name_relation_mismatch" in target["reasons"]
+    assert "weak_local_relation_support" in target["reasons"]
+    assert target["entity_relation"]["same_name_distractor"] is True

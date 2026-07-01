@@ -14,6 +14,7 @@ import time
 from ..auditor import build_audit_prompt  # noqa: F401  (供大模型 SFT 复用)
 from ..contract import build_contract
 from ..evidence_expansion import maybe_expand_contract
+from ..entity_consistency import EntityConsistencyConfig, apply_entity_consistency_rerank
 from ..rewards import build_training_targets, compute_decomposed_reward
 from ..replay_buffer import ReplayBuffer
 from ..schemas import ReplayExperience
@@ -140,6 +141,11 @@ class CoevolutionTrainer:
         if self.small is not None:
             if hasattr(self.small, "rank_documents"):
                 ranked = self.small.rank_documents(sample)
+                ranked = apply_entity_consistency_rerank(
+                    sample,
+                    ranked,
+                    EntityConsistencyConfig(**vars(cfg.entity_consistency)),
+                )
                 policy_prediction = getattr(self.small, "last_policy_prediction", {}) or {}
                 policy_action = policy_prediction.get("action")
                 policy_action_confidence = policy_prediction.get("action_confidence")

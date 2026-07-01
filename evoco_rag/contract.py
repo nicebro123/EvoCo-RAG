@@ -197,6 +197,12 @@ def build_contract(
                if "evidence_confidence" in d else {}),
             **({"policy_confidence": round(float(d["policy_confidence"]), 4)}
                if "policy_confidence" in d else {}),
+            **({"pre_entity_score": round(float(d["pre_entity_score"]), 4)}
+               if "pre_entity_score" in d else {}),
+            **({"entity_consistency_boost": round(float(d["entity_consistency_boost"]), 4)}
+               if "entity_consistency_boost" in d else {}),
+            **({"entity_consistency": d["entity_consistency"]}
+               if "entity_consistency" in d else {}),
         }
         for i, d in enumerate(ranked[:top_k])
     ]
@@ -224,6 +230,9 @@ def build_contract(
             "entity_ambiguity": entity_ambiguity,
             "evidence_conflict": False,
             "missing_relation": top1_conf < high_conf_threshold * 0.6,
+            "entity_consistency_enabled": any(
+                "entity_consistency_boost" in d for d in ranked[:top_k]
+            ),
         },
         cost={
             "num_ranked_docs": len(ranked),
