@@ -198,6 +198,11 @@ class LargeGeneratorAuditor:
         contract_ids = set(contract.selected_doc_ids()) | set(contract.candidate_doc_ids())
         selected_ids = set(contract.selected_doc_ids())
         used_ids = [doc_id for doc_id in audit.used_doc_ids if isinstance(doc_id, int)]
+        candidate_docs = contract.candidate_docs or []
+        top_doc = candidate_docs[0] if candidate_docs else {}
+        top_doc_id = top_doc.get("doc_id")
+        top_ec = top_doc.get("entity_consistency") or {}
+        top_entity_relation_consistent = bool(top_ec.get("entity_relation_consistent"))
 
         score = 0.0
         score += 2.0 if json_valid else -2.0
@@ -235,6 +240,10 @@ class LargeGeneratorAuditor:
                 score -= 1.0
             if any(doc_id in selected_ids for doc_id in used_ids):
                 score += 0.5
+            if top_entity_relation_consistent and top_doc_id in used_ids:
+                score += 0.75
+            elif top_entity_relation_consistent and top_doc_id is not None and top_doc_id not in used_ids:
+                score -= 0.35
         else:
             score -= 1.0
 

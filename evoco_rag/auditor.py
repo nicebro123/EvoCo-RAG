@@ -108,7 +108,7 @@ JSON schema:
 }"""
 
 HYBRID_JSON_REPAIR_SCHEMA_HINT = """You MUST do evidence analysis like hybrid_analysis_json, but make the answer recoverable even if nested analysis becomes long. Output ONLY one valid JSON object, no Markdown, no code fence, no extra text.
-This repair-oriented schema keeps BOTH a structured analysis array and a flat answer_summary string. Keep final_answer near the top and non-empty.
+This repair-oriented schema keeps BOTH a structured analysis array and a flat answer_summary string. Keep final_answer near the top and non-empty. Prefer the top-ranked entity-relation-consistent evidence unless it clearly lacks the answer.
 JSON schema:
 {
   "final_answer": "<short entity-style answer string; no explanation>",
@@ -200,7 +200,8 @@ def build_audit_prompt(
         + (
             "Use a repair-oriented hybrid JSON format: first put a short non-empty "
             "final_answer and answer_summary near the top, then provide the structured "
-            "analysis array. The answer phrase must appear in final_answer, "
+            "analysis array. Prefer the top-ranked evidence when it is entity-relation "
+            "consistent. The answer phrase must appear in final_answer, "
             "answer_summary, and one supporting extraction/quote when supported. "
             if hybrid_repair else ""
         )
@@ -235,6 +236,8 @@ def build_audit_prompt(
         lines.append("  - Put final_answer and answer_summary before the analysis array.")
         lines.append("  - final_answer must be short, non-empty, and copied from supporting evidence whenever possible.")
         lines.append("  - answer_summary must repeat the final answer phrase in a plain sentence.")
+        lines.append("  - Prefer the top-ranked evidence if it matches both the question entity and relation.")
+        lines.append("  - Do not answer from a page title or parenthetical title; extract the occupation/date/location from the evidence sentence.")
         lines.append("  - Fill analysis as an array, but keep each reason short to avoid malformed JSON.")
         lines.append("  - Escape quotes/newlines properly so the JSON remains valid.")
         lines.append("  - If a same-name document is about the wrong entity, mark it as distractor and do not cite it.")
@@ -269,6 +272,8 @@ def build_audit_prompt(
     lines.append("  - final_answer should be copied from the evidence whenever possible.")
     lines.append("  - cited quotes must contain the answer phrase or directly justify it.")
     lines.append("  - reject same-name distractors whose title/content does not match the question entity.")
+    lines.append("  - prefer rank-1 evidence when it is entity-relation consistent; do not jump to lower-ranked same-name documents unless rank-1 lacks support.")
+    lines.append("  - do not answer from a page title or parenthetical title, e.g. if the title says '(politician)' but the sentence says 'became a dentist', answer 'dentist'.")
     lines.append("  - for 'What is X\'s occupation?' choose X's occupation/profession, not a birthplace, nationality, date, honorific, or another person's role.")
     lines.append("  - if selected evidence is about the wrong entity, use a better candidate document or mark the answer unsupported.")
     if show_gold:

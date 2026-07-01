@@ -356,3 +356,18 @@ def test_large_trainer_boundary_prompt_includes_relation_hint():
 
     assert "Question relation: location" in prompt
     assert "Relation constraint: Do not choose residence." in prompt
+
+
+def test_score_audit_candidate_prefers_top_entity_relation_consistent_doc():
+    from conftest import make_audit, make_contract, make_sample
+    from evoco_rag.large_model import LargeGeneratorAuditor
+
+    sample = make_sample()
+    contract = make_contract([0], candidate_doc_ids=(0, 1))
+    contract.candidate_docs[0]["entity_consistency"] = {"entity_relation_consistent": True}
+    good = make_audit("politician", [0])
+    good.used_evidence = [{"doc_id": 0, "quote": "Conservative Party politician"}]
+    bad = make_audit("officer", [1])
+    bad.used_evidence = [{"doc_id": 1, "quote": "British Army officer and naturalist"}]
+
+    assert LargeGeneratorAuditor.score_audit_candidate(sample, contract, good, True) > LargeGeneratorAuditor.score_audit_candidate(sample, contract, bad, True)

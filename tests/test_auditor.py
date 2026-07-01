@@ -252,3 +252,17 @@ def test_audit_candidate_score_prefers_supported_cited_answer():
     bad_score = LargeGeneratorAuditor.score_audit_candidate(sample, contract, bad, True)
 
     assert good_score > bad_score
+
+
+def test_hybrid_json_repair_prompt_warns_against_title_occupation_trap():
+    sample = make_sample()
+    contract = make_contract([0])
+
+    messages = build_audit_prompt(sample, contract, prompt_style="hybrid_json_repair")
+    user = messages[1]["content"]
+    system = messages[0]["content"]
+
+    assert "Prefer the top-ranked evidence" in system
+    assert "Do not answer from a page title" in user
+    assert "became a dentist" in user
+    assert "entity-relation consistent" in user
